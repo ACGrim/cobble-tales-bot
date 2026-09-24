@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cobble Tales - OAuth Callback</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 1.3rem; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+  .row { margin: 12px 0; }
+  .label { font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Cobble Tales Poster - OAuth callback</h1>
+<p>This page is only used to receive the redirect after authorizing the app. Copy the values below into your terminal / GitHub Secrets as needed, then you can close this tab.</p>
+<div id="output"></div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const out = document.getElementById('output');
+  if ([...params.keys()].length === 0) {
+    out.innerHTML = '<p>No query parameters found in the URL.</p>';
+  } else {
+    for (const [key, value] of params.entries()) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<div class="label">' + key + '</div><code>' + value + '</code>';
+      out.appendChild(row);
+    }
+  }
+</script>
+</body>
+</html>
