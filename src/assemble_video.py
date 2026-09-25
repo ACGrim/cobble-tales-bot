@@ -3,6 +3,8 @@ Assembles the final vertical (1080x1920) Reddit-story video from:
   - narration audio (mp3, from tts.py)
   - a continuous Minecraft parkour gameplay clip (from assets/parkour/),
     cover-cropped to fill the frame
+  - a mock Reddit post card (subreddit/title/fake votes) pinned near the
+    top, so it reads like a genuine screenshot of the post being narrated
   - burned-in captions (rendered with Pillow, NOT ImageMagick, so this runs
     cleanly on a stock GitHub Actions runner with no extra system config)
   - an optional looped background music bed from assets/music/
@@ -16,7 +18,7 @@ import glob
 import os
 import random
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # Pillow >=10 removed Image.ANTIALIAS; moviepy 1.0.3's resize still
 # references it, so shim it back in for compatibility.
@@ -123,6 +125,162 @@ def _render_brand_bar(out_path, w=config.VIDEO_WIDTH, height=140):
     return out_path
 
 
+# --- Mock Reddit post card -------------------------------------------------
+# Purely original artwork: generic circle "avatar", hand-drawn upvote
+# triangle and comment-bubble icons, laid out in Reddit's familiar light
+# post-card convention and accent color. No Reddit logo/mascot asset is
+# used anywhere -- that's copyrighted/trademarked and isn't ours to embed.
+# The subreddit/username/vote counts are cosmetic flavor (this channel
+# writes wholly original stories -- see generate_reddit_story.py), not a
+# claim that a specific real post exists.
+
+_SUBREDDIT_KEYWORDS = [
+    ("aita", "AmItheAsshole"),
+    ("tifu", "tifu"),
+    ("malicious", "MaliciousCompliance"),
+    ("petty-revenge", "pettyrevenge"),
+    ("petty revenge", "pettyrevenge"),
+    ("creepy", "creepyencounters"),
+    ("wholesome", "MadeMeSmile"),
+    ("relationship", "relationship_advice"),
+    ("family secret", "confession"),
+    ("roommate", "AmItheAsshole"),
+    ("stranger", "MadeMeSmile"),
+    ("bully", "pettyrevenge"),
+    ("first job", "antiwork"),
+    ("customer service", "talesfromretail"),
+    ("workplace", "antiwork"),
+    ("confession", "confession"),
+]
+
+_USERNAME_ADJECTIVES = [
+    "tired", "quiet", "salty", "random", "calm", "tiny", "lucky", "broke",
+    "sleepy", "curious", "grumpy", "gentle",
+]
+_USERNAME_NOUNS = [
+    "teacher", "raccoon", "potato", "ghost", "otter", "gremlin", "wanderer",
+    "squirrel", "hamster", "nomad", "barista", "intern",
+]
+
+
+def guess_subreddit(category, title):
+    text = f"{category or ''} {title or ''}".lower()
+    for kw, sub in _SUBREDDIT_KEYWORDS:
+        if kw in text:
+            return sub
+    return "stories"
+
+
+def _fake_reddit_meta():
+    username = (
+        f"u/{random.choice(_USERNAME_ADJECTIVES)}_"
+        f"{random.choice(_USERNAME_NOUNS)}{random.randint(1, 999)}"
+    )
+    age = random.choice(
+        ["3 hr. ago", "6 hr. ago", "9 hr. ago", "14 hr. ago", "1 d. ago", "2 d. ago"]
+    )
+    upvotes = random.randint(1200, 48000)
+    comments = random.randint(80, 2400)
+    return username, age, upvotes, comments
+
+
+def _format_count(n):
+    if n >= 1000:
+        v = n / 1000
+        return f"{v:.1f}K" if v < 10 else f"{v:.0f}K"
+    return str(n)
+
+
+def _render_reddit_card_png(title, category, out_path, w=config.VIDEO_WIDTH):
+    """Renders a small mock Reddit post header (subreddit, fake
+    username/age, the story's title, fake vote/comment counts) -- the
+    "screenshot pinned at the top" look viewers expect from this genre."""
+    subreddit = guess_subreddit(category, title)
+    username, age, upvotes, comments = _fake_reddit_meta()
+
+    pad_x, pad_y = 32, 26
+    margin = 40  # card's outer margin from the frame edges
+    card_w = w - margin * 2
+    avatar_d = 52
+
+    header_font = _load_font(30)
+    meta_font = _load_font(24)
+    title_font = _load_font(38)
+    stat_font = _load_font(28)
+
+    tmp_draw = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    max_text_w = card_w - pad_x * 2
+    title_lines = _wrap_text(tmp_draw, title, title_font, max_text_w)[:4]
+
+    title_line_h = title_font.size + 10
+    title_block_h = title_line_h * len(title_lines)
+    gap = 16
+    stats_h = 40
+
+    card_h = pad_y * 2 + avatar_d + gap + title_block_h + gap + stats_h
+    canvas_h = card_h + 20
+
+    img = Image.new("RGBA", (w, canvas_h), (0, 0, 0, 0))
+    card_left, card_top = margin, 0
+    card_right, card_bottom = w - margin, card_h
+
+    # Soft drop shadow, baked once into this static PNG (not per-frame).
+    shadow = Image.new("RGBA", (w, canvas_h), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle(
+        [card_left, card_top + 6, card_right, card_bottom + 6],
+        radius=26, fill=(0, 0, 0, 90),
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(8))
+    img = Image.alpha_composite(img, shadow)
+    draw = ImageDraw.Draw(img)
+
+    draw.rounded_rectangle(
+        [card_left, card_top, card_right, card_bottom],
+        radius=26, fill=(255, 255, 255, 240),
+    )
+
+    # Generic avatar: solid circle + simple head-and-shoulders silhouette --
+    # deliberately NOT Reddit's Snoo mascot.
+    ax, ay = card_left + pad_x, card_top + pad_y
+    draw.ellipse([ax, ay, ax + avatar_d, ay + avatar_d], fill=(255, 69, 0, 255))
+    draw.ellipse(
+        [ax + avatar_d * 0.30, ay + avatar_d * 0.20, ax + avatar_d * 0.70, ay + avatar_d * 0.56],
+        fill=(255, 255, 255, 255),
+    )
+    draw.pieslice(
+        [ax + avatar_d * 0.10, ay + avatar_d * 0.52, ax + avatar_d * 0.90, ay + avatar_d * 1.20],
+        180, 360, fill=(255, 255, 255, 255),
+    )
+
+    tx = ax + avatar_d + 18
+    draw.text((tx, ay - 2), f"r/{subreddit}", font=header_font, fill=(20, 20, 20, 255))
+    draw.text(
+        (tx, ay + header_font.size + 4), f"{username} · {age}",
+        font=meta_font, fill=(120, 120, 120, 255),
+    )
+
+    ty = card_top + pad_y + avatar_d + gap
+    for ln in title_lines:
+        draw.text((card_left + pad_x, ty), ln, font=title_font, fill=(20, 20, 20, 255))
+        ty += title_line_h
+
+    sy = ty + gap
+    sx = card_left + pad_x
+    # Upvote triangle + count.
+    draw.polygon([(sx, sy + 26), (sx + 13, sy), (sx + 26, sy + 26)], fill=(255, 69, 0, 255))
+    up_text = _format_count(upvotes)
+    draw.text((sx + 36, sy + 2), up_text, font=stat_font, fill=(60, 60, 60, 255))
+
+    # Comment-bubble icon (rounded rect + tail) + count.
+    cx = sx + 36 + draw.textlength(up_text, font=stat_font) + 44
+    draw.rounded_rectangle([cx, sy - 2, cx + 30, sy + 20], radius=8, fill=(120, 120, 120, 255))
+    draw.polygon([(cx + 4, sy + 18), (cx + 4, sy + 27), (cx + 13, sy + 18)], fill=(120, 120, 120, 255))
+    draw.text((cx + 42, sy + 2), _format_count(comments), font=stat_font, fill=(60, 60, 60, 255))
+
+    img.save(out_path)
+    return out_path
+
+
 def _gradient_fallback_image(out_path, w=config.VIDEO_WIDTH, h=config.VIDEO_HEIGHT):
     top = (17, 24, 39)
     bottom = (30, 58, 95)
@@ -179,7 +337,8 @@ def build_parkour_background(total_duration, work_dir, w, h):
     return bg, [raw]
 
 
-def assemble(narration_path, background_builder, timed_captions, work_dir, out_path, w=None, h=None):
+def assemble(narration_path, background_builder, timed_captions, work_dir, out_path,
+             w=None, h=None, story_title=None, category=None):
     w = w or config.VIDEO_WIDTH
     h = h or config.VIDEO_HEIGHT
     os.makedirs(work_dir, exist_ok=True)
@@ -208,7 +367,22 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
     _render_brand_bar(brand_png, w=w)
     brand_layer = ImageClip(brand_png).set_duration(total_duration).set_position(("center", "top"))
 
-    video = CompositeVideoClip([background, brand_layer] + caption_layers, size=(w, h)).set_duration(total_duration)
+    reddit_layer = None
+    if story_title:
+        reddit_png = os.path.join(work_dir, "reddit_card.png")
+        _render_reddit_card_png(story_title, category, reddit_png, w=w)
+        reddit_layer = (
+            ImageClip(reddit_png)
+            .set_duration(total_duration)
+            .set_position(("center", 130))
+        )
+
+    layers = [background, brand_layer]
+    if reddit_layer is not None:
+        layers.append(reddit_layer)
+    layers += caption_layers
+
+    video = CompositeVideoClip(layers, size=(w, h)).set_duration(total_duration)
 
     music_files = glob.glob(os.path.join(config.MUSIC_DIR, "*.mp3"))
     if music_files:
@@ -248,6 +422,8 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
     for raw in raw_bg_clips:
         raw.close()
     brand_layer.close()
+    if reddit_layer is not None:
+        reddit_layer.close()
     for layer in caption_layers:
         layer.close()
     if music_files:

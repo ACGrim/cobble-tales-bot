@@ -114,6 +114,7 @@ def run_reddit_story(index, session_used_categories):
         assemble_video.build_parkour_background,
         timed_captions, work_dir, out_path,
         w=config.VIDEO_WIDTH, h=config.VIDEO_HEIGHT,
+        story_title=story_data["title"], category=category,
     )
     print(f"[main] Reddit story {index} assembled: {out_path}")
 
