@@ -1,15 +1,19 @@
 """
-Publishes a finished Short to Instagram as a Reel via the Instagram Graph
-API. Three-step flow: create a media container pointing at a public video
-URL (Instagram's servers fetch it from there), poll until Instagram
-finishes downloading/processing it, then publish the container.
+Publishes a finished Short to Instagram as a Reel via the Instagram
+Platform API (the current "Instagram API with Instagram Login" product --
+NOT the older Facebook Login / linked-Page flow). Three-step flow: create
+a media container pointing at a public video URL (Instagram's servers
+fetch it from there), poll until Instagram finishes downloading/
+processing it, then publish the container.
 
-Needs an Instagram professional (Business or Creator) account linked to a
-Facebook Page, and a Meta app with instagram_content_publish,
-instagram_basic, and pages_read_engagement granted to that account. If
-your own Instagram/Facebook account has a role on the Meta app itself
-(added as an Instagram Tester, same idea as YouTube OAuth's "Testing"
-mode), this works without a Meta App Review. See SETUP_CROSSPOST.md.
+Needs an Instagram professional (Business or Creator) account, and a Meta
+app with the Instagram product's Business Login configured, requesting
+instagram_business_basic and instagram_business_content_publish. No linked
+Facebook Page is required with this flow. Because the target account has a
+direct role on the app (added as the app's own account during Business
+Login), this runs under Standard Access and needs no Meta App Review --
+same idea as TikTok's unaudited Sandbox posting to its own target user.
+See SETUP_CROSSPOST.md.
 """
 import time
 
@@ -17,7 +21,7 @@ import requests
 
 from . import config
 
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+GRAPH_API_BASE = "https://graph.instagram.com/v25.0"
 POLL_INTERVAL_SECONDS = 10
 MAX_POLL_ATTEMPTS = 30  # ~5 minutes
 

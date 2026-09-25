@@ -39,6 +39,12 @@ jobs:
           GH_SECRETS_PAT: ${{ secrets.GH_SECRETS_PAT }}
         run: python scripts/refresh_tiktok_token.py
 
+      - name: Refresh Instagram access token
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GH_SECRETS_PAT: ${{ secrets.GH_SECRETS_PAT }}
+        run: python scripts/refresh_instagram_token.py
+
       - name: Run daily pipeline (Reddit-story videos)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -47,8 +53,10 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
-          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          # IG_ACCESS_TOKEN is NOT set here -- the "Refresh Instagram
+          # access token" step above sets it fresh via $GITHUB_ENV, same
+          # reasoning as TIKTOK_ACCESS_TOKEN below.
           # TIKTOK_ACCESS_TOKEN is NOT set here -- the "Refresh TikTok
           # access token" step above sets it fresh via $GITHUB_ENV so
           # every run uses a token that's at most a few seconds old.
