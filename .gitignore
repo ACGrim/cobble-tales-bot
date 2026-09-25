@@ -8,3 +8,4 @@ work/
 token.json
 client_secret*.json
 !assets/music/*.mp3
+!assets/parkour/*.mp4
