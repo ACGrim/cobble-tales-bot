@@ -215,7 +215,13 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
         music_path = random.choice(music_files)
         music = AudioFileClip(music_path)
         music = audio_loop(music, duration=total_duration)
-        music = volumex(music, 0.14)
+        # The three bundled tracks are mastered hot (measured mean ~-11 to
+        # -12.5 dB, peaking at 0 dB), so even a "quiet" linear multiplier
+        # still reads as loud once bass/synth hits land under the narration.
+        # 0.06 (~-24 dB) keeps it a felt-not-heard background bed instead of
+        # competing with the voice. Tune this one number if it still needs
+        # to move after a listen.
+        music = volumex(music, 0.06)
         final_audio = CompositeAudioClip([music, narration])
     else:
         final_audio = narration
