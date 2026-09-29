@@ -38,6 +38,9 @@ TIKTOK_CROSSPOST_ENABLED = CROSSPOST_HOSTING_ENABLED and bool(TIKTOK_ACCESS_TOKE
 CHANNEL_BRAND = "Cobble Tales"
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
 TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-GuyNeural")  # edge-tts voice name
+# Speaking speed. The genre's narration runs a little faster than a normal
+# read; this is an edge-tts percentage string ("+0%" = normal).
+TTS_RATE = os.environ.get("TTS_RATE", "+5%")
 
 # Vertical (9:16), Reels/TikTok native format
 VIDEO_WIDTH = 1080
@@ -45,13 +48,21 @@ VIDEO_HEIGHT = 1920
 
 # Reddit-story videos. Original AI-written stories in the genre/voice of
 # viral Reddit posts (AITA, TIFU, confession, revenge, etc.) -- not scraped
-# real posts, see SETUP.md for why. Background is one continuous Minecraft
-# parkour gameplay clip sampled from a local library (see
-# assets/parkour/), the genre convention, rather than cut-between-topical
-# b-roll.
+# real posts, see SETUP.md for why. Background is one continuous parkour
+# gameplay shot, the genre convention, rather than cut-between-topical
+# b-roll -- see PARKOUR_CLIP_URLS below for where it comes from.
 REDDIT_STORIES_PER_DAY = int(os.environ.get("REDDIT_STORIES_PER_DAY", "3"))
 REDDIT_STORY_TARGET_SECONDS_MIN = 40
 REDDIT_STORY_TARGET_SECONDS_MAX = 75
+
+# Background gameplay, in priority order:
+#   1. real clips committed to assets/parkour/ (*.mp4 etc.)
+#   2. real clips downloaded from PARKOUR_CLIP_URLS -- comma/space/newline
+#      separated direct links (e.g. files in your R2 bucket), for footage too
+#      big to commit to GitHub (100MB/file limit)
+#   3. otherwise, freshly generated block-parkour gameplay (src/gameplay.py),
+#      so every video always has moving gameplay behind it
+PARKOUR_CLIP_URLS = [u for u in os.environ.get("PARKOUR_CLIP_URLS", "").replace(",", " ").split() if u]
 
 # --- Paths ---------------------------------------------------------------
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,7 +70,10 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 ASSETS_DIR = os.path.join(ROOT_DIR, "assets")
 MUSIC_DIR = os.path.join(ASSETS_DIR, "music")
 PARKOUR_DIR = os.path.join(ASSETS_DIR, "parkour")
+FONTS_DIR = os.path.join(ASSETS_DIR, "fonts")
+CAPTION_FONT = os.path.join(FONTS_DIR, "Montserrat-Black.ttf")
 WORK_DIR = os.path.join(ROOT_DIR, "work")  # scratch dir, gitignored
+PARKOUR_CACHE_DIR = os.path.join(WORK_DIR, "parkour_cache")
 
 REDDIT_STORY_CATEGORIES_FILE = os.path.join(DATA_DIR, "reddit_story_categories.json")
 USED_REDDIT_STORY_CATEGORIES_FILE = os.path.join(DATA_DIR, "used_reddit_story_categories.json")

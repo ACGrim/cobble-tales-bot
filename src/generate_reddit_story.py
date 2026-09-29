@@ -37,17 +37,16 @@ Output ONLY valid JSON (no markdown fences, no commentary) matching this schema:
 {
   "title": "string, <=100 chars, written like a genuine viral Reddit post title for \
 this genre (e.g. 'AITA for telling my sister the truth the morning of her wedding?')",
-  "hook": "string, the first spoken line, <=15 words, must earn the next 2 seconds -- \
-often the same as or very close to the title's core question/setup",
-  "script": "string, the FULL spoken narration from first word to last, 140-220 words, \
+  "hook": "string, the first line of the story (spoken right AFTER the title is read \
+aloud), <=15 words, must earn the next 2 seconds -- raise the stakes or drop the viewer \
+straight into the situation; never a restatement of the title",
+  "script": "string, the FULL spoken story from first word to last (the title is read \
+aloud separately just before it, so never repeat the title here), 140-220 words, \
 written to be read aloud in 40-75 seconds at a natural, slightly breathless \
 storytelling pace. First person, past tense, concrete specific details (names can be \
 placeholders like 'my sister' rather than invented proper names). Build to a clear \
 twist or resolution in the final 1-2 sentences. No stage directions, no bracketed \
 notes.",
-  "captions": ["array of short strings -- the script split into on-screen caption \
-chunks of 3-8 words each, in order, that together reconstitute the full script \
-verbatim (just re-chunked)"],
   "description": "string, 1-2 sentences for the post caption, written to make someone \
 want to know how it ends -- includes a call to follow for daily stories",
   "tags": ["8-12 relevant hashtags for the genre, lowercase, no # symbol, e.g. \
@@ -56,6 +55,8 @@ want to know how it ends -- includes a call to follow for daily stories",
 
 Rules:
 - The hook must be the literal first sentence of "script".
+- The narrator reads the title aloud first, then "script" -- so "script" must not \
+open by repeating or paraphrasing the title.
 - This is fiction written in a genre's voice -- never claim or imply it happened to a \
 real, identifiable person, and never use a real person's name.
 - No profanity, no graphic violence, no sexual content, no hate speech -- keep it \
@@ -88,7 +89,7 @@ def generate(category: str) -> dict:
 
     data = json.loads(raw)
 
-    required = ["title", "hook", "script", "captions", "description", "tags"]
+    required = ["title", "hook", "script", "description", "tags"]
     missing = [k for k in required if k not in data]
     if missing:
         raise ValueError(f"Claude output missing fields: {missing}\nRaw: {raw[:500]}")

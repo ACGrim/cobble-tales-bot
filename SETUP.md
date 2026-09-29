@@ -4,10 +4,11 @@ This is the one-time account/credential setup for this pipeline.
 **REDDIT_STORIES_PER_DAY Reddit-story videos, Instagram/TikTok only.**
 Original (not scraped) short stories written in the voice/genre of viral
 "Reddit story" posts (AITA, TIFU, confession, etc.), narrated over a
-continuous Minecraft parkour gameplay clip. See `src/generate_reddit_story.py`
-for why these are AI-original rather than real scraped Reddit posts (short
-version: Reddit's API is now practically closed to small projects), and
-`assets/parkour/README.txt` for how to source the background footage.
+continuous parkour gameplay shot. See `src/generate_reddit_story.py` for why
+these are AI-original rather than real scraped Reddit posts (short version:
+Reddit's API is now practically closed to small projects). Background
+gameplay needs no setup: it's generated automatically unless you add your
+own clips (see "Optional: use your own gameplay footage" at the end).
 
 Everything below is required before the daily workflow does anything --
 until Parts 1-4 are done, `python -m src.main` just prints that no
@@ -168,10 +169,9 @@ TikTok's once Part 5 is done.
 Once the Instagram secrets are set, trigger a manual run
 (`workflow_dispatch`) and watch the Actions log for `[upload_instagram]`
 lines to confirm the container gets created, processed, and published, and
-`[main] Reddit story` lines to confirm those built and posted too. If
-`assets/parkour/` is still empty, videos will build with a plain gradient
-background instead of real footage -- that's expected until you've
-dropped real clips in there.
+`[main] Reddit story` lines to confirm those built and posted too. An
+`[assemble] background:` line says which gameplay each video used --
+"generated block-parkour gameplay" is expected until you add real clips.
 
 ---
 
@@ -245,3 +245,26 @@ stops working (token revoked, PAT expired), the pipeline just skips
 TikTok posting and keeps posting to Instagram; check the `Refresh TikTok
 access token` step's log for a `[refresh_tiktok_token]` line explaining
 why.
+
+---
+
+## Optional: use your own gameplay footage
+
+Nothing to do here unless you want real recorded gameplay instead of the
+generated block-parkour course every video gets by default. Two ways:
+
+1. **Small clips (under 100MB each):** commit them to `assets/parkour/`.
+   See `assets/parkour/README.txt` for where to get footage you're allowed
+   to monetize.
+2. **Big clips:** host them anywhere with a direct download link -- e.g. a
+   *second* R2 bucket (created the same way as Part 1 steps 2-3, with public
+   access on but **no** expiry rule; the Part 1 bucket's 1-day rule would
+   delete them). Then add a repo **Variable** (Settings → Secrets and
+   variables → Actions → **Variables** tab) named `PARKOUR_CLIP_URLS` with
+   the links, separated by commas or spaces, e.g.
+   `https://pub-yyyyyyyy.r2.dev/parkour1.mp4, https://pub-yyyyyyyy.r2.dev/parkour2.mp4`.
+   They're downloaded at the start of each run.
+
+Clips in `assets/parkour/` win over `PARKOUR_CLIP_URLS`; if a clip can't be
+opened or downloaded, that video falls back to generated gameplay instead of
+failing.

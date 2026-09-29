@@ -13,11 +13,20 @@ and nothing in `career-edge-bot` touches Instagram/TikTok.
 
 **Format:** original (not scraped) short stories written in the voice and
 conventions of viral "Reddit story" posts (AITA, TIFU, confession,
-relationship, petty revenge, creepy encounter, etc.), narrated over a
-continuous Minecraft parkour gameplay clip — see `src/generate_reddit_story.py`
-for why these are AI-original rather than real scraped Reddit posts (short
-version: Reddit's API is now practically closed to small projects), and
-`assets/parkour/README.txt` for how to source the background footage.
+relationship, petty revenge, creepy encounter, etc.), in the classic
+"Reddit story" layout: parkour gameplay filling the screen, a Reddit-post
+card on screen while the title is read aloud, then big word-by-word captions
+synced to the narration, with a quiet music bed underneath. See
+`src/generate_reddit_story.py` for why these are AI-original rather than
+real scraped Reddit posts (short version: Reddit's API is now practically
+closed to small projects).
+
+**Background gameplay needs zero setup:** if you haven't added any real
+footage, every video gets freshly generated first-person block-parkour
+gameplay (`src/gameplay.py`, a brand-new course each time, no copyrighted
+assets). Drop your own recorded clips into `assets/parkour/` (or link them
+via `PARKOUR_CLIP_URLS`) and those are used instead — see
+`assets/parkour/README.txt`.
 
 ## How a day's videos get made (fully automatic)
 
@@ -28,13 +37,17 @@ version: Reddit's API is now practically closed to small projects), and
    story in the genre's voice, with a title, hook, captions, description,
    and hashtags.
 3. **Voice** — narrated with a consistent neural TTS voice (`edge-tts`,
-   free), giving the channel a recognizable "host."
-4. **Background** — one continuous Minecraft parkour clip from
-   `assets/parkour/`, cropped to fill the vertical frame (falls back to a
-   plain gradient if that folder is empty).
-5. **Assembly** — `moviepy` + `Pillow` composite the background, burned-in
-   branded captions, and a quiet background music bed into a finished
-   1080x1920 MP4.
+   free), giving the channel a recognizable "host." The post title is read
+   first, then the story; edge-tts also reports exactly when each word is
+   spoken, which drives the synced captions.
+4. **Background** — one continuous parkour gameplay shot filling the
+   vertical frame: a random real clip from `assets/parkour/` (or
+   `PARKOUR_CLIP_URLS`) if you've added any, otherwise freshly generated
+   block-parkour gameplay from `src/gameplay.py`.
+5. **Assembly** — `moviepy` + `Pillow` composite the gameplay, a mock
+   Reddit post card (shown while the title is read), big 1-3 word captions
+   with the spoken word highlighted, the brand tag, and a quiet background
+   music bed into a finished 1080x1920 MP4.
 6. **Hosting** — the finished video is temporarily uploaded to Cloudflare
    R2 (S3-compatible object storage) so Instagram/TikTok's servers have a
    URL to fetch it from, then deleted once posted.
@@ -54,9 +67,10 @@ version: Reddit's API is now practically closed to small projects), and
 src/
   main.py                  orchestrates the full daily run
   generate_reddit_story.py Claude story generation
-  tts.py                   edge-tts narration
-  captions.py              timing captions to narration length
-  assemble_video.py        moviepy/Pillow video assembly (parkour background)
+  tts.py                   edge-tts narration (title + story, word timings)
+  captions.py              word-synced caption chunks (+ fallback timing)
+  gameplay.py              generated block-parkour gameplay background
+  assemble_video.py        moviepy/Pillow video assembly
   hosting.py               Cloudflare R2 temporary public hosting
   upload_instagram.py      Instagram Graph API Reels publish
   upload_tiktok.py         TikTok Content Posting API publish
@@ -70,8 +84,10 @@ data/
   used_reddit_story_categories.json  rotation state (auto-updated by CI)
 assets/
   music/     royalty-free background tracks
-  parkour/   Minecraft parkour gameplay clips (you provide these — empty
-             by default; see assets/parkour/README.txt)
+  fonts/     caption font (Montserrat Black, SIL Open Font License)
+  parkour/   optional real parkour gameplay clips (empty by default —
+             generated gameplay is used until you add some; see
+             assets/parkour/README.txt)
 .github/workflows/daily.yml   the cron job that runs everything, daily
 ```
 
@@ -92,7 +108,14 @@ python -m src.main
 
 Set `REDDIT_STORIES_PER_DAY` (default 3) to change how many stories run
 per day. `TIKTOK_PRIVACY_LEVEL` controls TikTok visibility (stays
-`SELF_ONLY` until TikTok approves the app — see SETUP.md).
+`SELF_ONLY` until TikTok approves the app — see SETUP.md). `TTS_VOICE` /
+`TTS_RATE` change the narrator's voice and speed.
+
+Preview just the generated gameplay (no API keys needed):
+
+```
+python -m src.gameplay preview.mp4 --seconds 12   # or preview.png for one frame
+```
 
 ## Realistic expectations
 
@@ -100,6 +123,7 @@ TikTok will only accept private posts (visible to nobody but you) until
 TikTok manually audits your developer app — that's TikTok's own review
 process, entirely out of this pipeline's control, with no guaranteed
 turnaround. Instagram has no equivalent review step for your own account.
-If `assets/parkour/` is empty, videos still build fine with a plain
-gradient background instead of real gameplay footage — see that folder's
-README for where to safely source clips you can monetize.
+If `assets/parkour/` is empty, videos use generated block-parkour gameplay
+— original footage, safe to monetize. If you'd rather use real Minecraft
+footage, that folder's README covers where to safely source clips you can
+monetize.

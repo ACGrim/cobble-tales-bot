@@ -1,10 +1,15 @@
-Put 3-6 Minecraft parkour gameplay videos (MP4) in this folder before Reddit
-story videos will have real footage. build_parkour_background() in
-assemble_video.py picks one at random for each video, along with a random
-start point, and crops it to fill the vertical frame. If this folder is
-empty, Reddit-story videos still build fine -- they just get a plain
-gradient background instead, which is why it's safe to leave empty until
-you've sourced real footage.
+OPTIONAL. Every Reddit-story video already has gameplay behind it: while this
+folder is empty, src/gameplay.py generates fresh first-person block-parkour
+gameplay for each video (original footage, a new course every time, safe to
+monetize). Only add clips here if you'd rather use real recorded Minecraft
+footage instead.
+
+If you do: put 3-6 parkour gameplay videos (MP4, MOV, M4V, WEBM or MKV) in
+this folder. build_parkour_background() in assemble_video.py picks one at
+random for each video, along with a random start point, and crops it to fill
+the vertical frame. Files over 100MB can't be committed to GitHub -- host
+those elsewhere and list them in the PARKOUR_CLIP_URLS repo variable instead
+(see the end of SETUP.md). Clips here take priority over PARKOUR_CLIP_URLS.
 
 Why this is a local folder and not a live API search (like assets/music/
 and how career-video b-roll works): stock-footage sites (Pexels, Pixabay --

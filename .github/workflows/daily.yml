@@ -13,7 +13,9 @@ permissions:
 jobs:
   build-and-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Each video takes ~3-5 min to render (generated gameplay + encode) plus
+    # up to ~5 min per platform waiting on Instagram/TikTok processing.
+    timeout-minutes: 90
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -61,6 +63,13 @@ jobs:
           # access token" step above sets it fresh via $GITHUB_ENV so
           # every run uses a token that's at most a few seconds old.
           TIKTOK_PRIVACY_LEVEL: ${{ vars.TIKTOK_PRIVACY_LEVEL || 'SELF_ONLY' }}
+          # Optional repo Variables (Settings -> Secrets and variables ->
+          # Actions -> Variables). PARKOUR_CLIP_URLS: direct links to your own
+          # real gameplay clips (e.g. in your R2 bucket) -- leave unset to use
+          # assets/parkour/ clips, or generated gameplay if that's empty too.
+          PARKOUR_CLIP_URLS: ${{ vars.PARKOUR_CLIP_URLS }}
+          TTS_VOICE: ${{ vars.TTS_VOICE || 'en-US-GuyNeural' }}
+          TTS_RATE: ${{ vars.TTS_RATE || '+5%' }}
         run: python -m src.main
 
       - name: Commit updated category rotation state

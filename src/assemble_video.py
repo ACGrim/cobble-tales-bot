@@ -1,11 +1,13 @@
 """
 Assembles the final vertical (1080x1920) Reddit-story video from:
-  - narration audio (mp3, from tts.py)
-  - a continuous Minecraft parkour gameplay clip (from assets/parkour/),
-    cover-cropped to fill the frame
-  - a mock Reddit post card (subreddit/title/fake votes) pinned near the
-    top, so it reads like a genuine screenshot of the post being narrated
-  - burned-in captions (rendered with Pillow, NOT ImageMagick, so this runs
+  - narration audio (mp3, from tts.py): the post title, then the story
+  - full-screen parkour gameplay: a real clip from assets/parkour/ (or
+    PARKOUR_CLIP_URLS) cover-cropped to fill the frame, or freshly generated
+    block-parkour gameplay from gameplay.py when there's no real footage
+  - a mock Reddit post card (subreddit/title/fake votes) centered on screen
+    while the title is read, so it reads like a screenshot of the post
+  - big word-by-word captions synced to the narration, with the word being
+    spoken highlighted (rendered with Pillow, NOT ImageMagick, so this runs
     cleanly on a stock GitHub Actions runner with no extra system config)
   - an optional looped background music bed from assets/music/
   - a small static brand wordmark bar
@@ -15,8 +17,14 @@ needs a policy.xml patch to allow text rendering) in favor of Pillow-rendered
 PNG overlays — one less fragile moving part in CI.
 """
 import glob
+import hashlib
 import os
 import random
+import sys
+import traceback
+from urllib.parse import urlparse
+
+import requests
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -35,7 +43,7 @@ from moviepy.audio.fx.all import audio_loop, volumex
 from moviepy.video.fx.all import crop
 from moviepy.video.fx.all import loop as loop_video
 
-from . import config
+from . import config, gameplay
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -67,47 +75,82 @@ def _wrap_text(draw, text, font, max_width):
     return lines
 
 
-def _render_caption_png(text, out_path, w=config.VIDEO_WIDTH, box_height=340, font_size=64):
-    # moviepy's ImageClip decodes and holds the FULL image in memory for as
-    # long as the clip object exists. Render onto a full-width canvas to
-    # get correct text wrapping/centering, then crop down to just the
-    # rounded-rect bubble (+ small margin) before saving, so each ImageClip
-    # only ever holds as many pixels as the text needs.
-    img = Image.new("RGBA", (w, box_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    font = _load_font(font_size)
-    max_text_width = w - 120
-    lines = _wrap_text(draw, text.upper(), font, max_text_width)
+# Big word-by-word captions, the genre's look: 1-3 words at a time, heavy
+# uppercase type with a thick black outline (legible over any footage without
+# a background box), and the word being spoken right now in yellow.
+CAPTION_FONT_SIZE = 86
+CAPTION_CENTER_Y = 0.5  # vertical center of the caption, as a fraction of frame height
+CAPTION_COLOR = (255, 255, 255, 255)
+CAPTION_HIGHLIGHT = (255, 224, 46, 255)
 
-    line_heights = [draw.textbbox((0, 0), ln, font=font)[3] for ln in lines]
-    total_h = sum(line_heights) + (len(lines) - 1) * 14
-    pad_y, pad_x = 22, 34
 
-    # Semi-transparent rounded background so captions stay legible over any footage.
-    bg_top = (box_height - total_h) // 2 - pad_y
-    bg_bottom = (box_height + total_h) // 2 + pad_y
-    max_line_w = max(draw.textlength(ln, font=font) for ln in lines)
-    bg_left = (w - max_line_w) / 2 - pad_x
-    bg_right = (w + max_line_w) / 2 + pad_x
-    draw.rounded_rectangle([bg_left, bg_top, bg_right, bg_bottom], radius=24, fill=(0, 0, 0, 160))
+def _load_caption_font(size):
+    if os.path.exists(config.CAPTION_FONT):
+        return ImageFont.truetype(config.CAPTION_FONT, size)
+    return _load_font(size)
 
-    y = (box_height - total_h) // 2
-    for ln in lines:
-        lw = draw.textlength(ln, font=font)
-        draw.text(((w - lw) / 2, y), ln, font=font, fill=(255, 255, 255, 255))
-        y += draw.textbbox((0, 0), ln, font=font)[3] + 14
 
-    crop_margin = 6
-    crop_box = (
-        max(0, int(bg_left) - crop_margin),
-        max(0, int(bg_top) - crop_margin),
-        min(w, int(bg_right) + crop_margin),
-        min(box_height, int(bg_bottom) + crop_margin),
-    )
-    img = img.crop(crop_box)
+def _render_caption_png(words, active, out_path, w=config.VIDEO_WIDTH, font_size=CAPTION_FONT_SIZE):
+    """Renders one caption chunk (list of words, words[active] highlighted;
+    active=None highlights nothing) and returns the PNG's (width, height).
 
+    moviepy's ImageClip decodes and holds the FULL image in memory for as long
+    as the clip object exists, and a video has one of these per spoken word,
+    so the PNG is cropped tight to the text rather than frame-sized."""
+    words = [wd.upper() for wd in words] or [""]
+    tmp = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
+    max_w = w - 120
+    font = _load_caption_font(font_size)
+    # One very long word shouldn't run off the frame: shrink until it fits.
+    while font_size > 40 and max(tmp.textlength(wd, font=font) for wd in words) > max_w:
+        font_size -= 6
+        font = _load_caption_font(font_size)
+    stroke = max(5, font_size // 9)
+    # The thick outline eats into the font's (narrow) space, so widen it.
+    space = tmp.textlength(" ", font=font) + stroke
+    widths = [tmp.textlength(wd, font=font) for wd in words]
+
+    lines, cur, cur_w = [], [], 0.0
+    for i, ww in enumerate(widths):
+        trial = ww if not cur else cur_w + space + ww
+        if cur and trial > max_w:
+            lines.append((cur, cur_w))
+            cur, cur_w = [i], ww
+        else:
+            cur.append(i)
+            cur_w = trial
+    lines.append((cur, cur_w))
+
+    ascent, descent = font.getmetrics()
+    line_h, line_gap = ascent + descent, 6
+    shadow_dy = max(4, font_size // 16)
+    pad = stroke + 14
+    box_w = int(max(lw for _, lw in lines)) + pad * 2
+    box_h = line_h * len(lines) + line_gap * (len(lines) - 1) + pad * 2 + shadow_dy
+
+    def draw_words(draw, dy, shadow):
+        y = pad + dy
+        for idxs, lw in lines:
+            x = (box_w - lw) / 2
+            for i in idxs:
+                if shadow:
+                    fill = stroke_fill = (0, 0, 0, 150)
+                else:
+                    fill = CAPTION_HIGHLIGHT if i == active else CAPTION_COLOR
+                    stroke_fill = (0, 0, 0, 255)
+                draw.text((x, y), words[i], font=font, fill=fill,
+                          stroke_width=stroke, stroke_fill=stroke_fill)
+                x += widths[i] + space
+            y += line_h + line_gap
+
+    # Soft drop shadow under the outline, so white text never gets lost on
+    # bright sky/quartz/sand.
+    shadow = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
+    draw_words(ImageDraw.Draw(shadow), shadow_dy, shadow=True)
+    img = shadow.filter(ImageFilter.GaussianBlur(4))
+    draw_words(ImageDraw.Draw(img), 0, shadow=False)
     img.save(out_path)
-    return out_path
+    return img.size
 
 
 def _render_brand_bar(out_path, w=config.VIDEO_WIDTH, height=140):
@@ -192,30 +235,30 @@ def _format_count(n):
 
 
 def _render_reddit_card_png(title, category, out_path, w=config.VIDEO_WIDTH):
-    """Renders a small mock Reddit post header (subreddit, fake
-    username/age, the story's title, fake vote/comment counts) -- the
-    "screenshot pinned at the top" look viewers expect from this genre."""
+    """Renders a mock Reddit post header (subreddit, fake username/age, the
+    story's title, fake vote/comment counts) -- the "screenshot of the post"
+    viewers expect on screen while the title is read out."""
     subreddit = guess_subreddit(category, title)
     username, age, upvotes, comments = _fake_reddit_meta()
 
-    pad_x, pad_y = 32, 26
-    margin = 40  # card's outer margin from the frame edges
+    pad_x, pad_y = 38, 32
+    margin = 48  # card's outer margin from the frame edges
     card_w = w - margin * 2
-    avatar_d = 52
+    avatar_d = 66
 
-    header_font = _load_font(30)
-    meta_font = _load_font(24)
-    title_font = _load_font(38)
-    stat_font = _load_font(28)
+    header_font = _load_font(34)
+    meta_font = _load_font(27)
+    title_font = _load_font(47)
+    stat_font = _load_font(31)
 
     tmp_draw = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
     max_text_w = card_w - pad_x * 2
     title_lines = _wrap_text(tmp_draw, title, title_font, max_text_w)[:4]
 
-    title_line_h = title_font.size + 10
+    title_line_h = title_font.size + 12
     title_block_h = title_line_h * len(title_lines)
-    gap = 16
-    stats_h = 40
+    gap = 20
+    stats_h = 44
 
     card_h = pad_y * 2 + avatar_d + gap + title_block_h + gap + stats_h
     canvas_h = card_h + 20
@@ -306,39 +349,94 @@ def _fit_cover(clip, w, h):
     return crop(clip, width=w, height=h, x_center=clip.w / 2, y_center=clip.h / 2)
 
 
+VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+
+
+def _local_clip_paths():
+    return sorted(p for p in glob.glob(os.path.join(config.PARKOUR_DIR, "*"))
+                  if p.lower().endswith(VIDEO_EXTS))
+
+
+def _downloaded_clip_paths():
+    """Real gameplay clips listed in PARKOUR_CLIP_URLS, downloaded once per
+    run into work/parkour_cache/. For footage too big to commit to GitHub --
+    host it anywhere with a direct link (e.g. your R2 bucket) instead."""
+    if not config.PARKOUR_CLIP_URLS:
+        return []
+    os.makedirs(config.PARKOUR_CACHE_DIR, exist_ok=True)
+    paths = []
+    for url in config.PARKOUR_CLIP_URLS:
+        parsed = urlparse(url)
+        ext = os.path.splitext(parsed.path)[1].lower()
+        name = hashlib.sha1(url.encode()).hexdigest()[:16] + (ext if ext in VIDEO_EXTS else ".mp4")
+        path = os.path.join(config.PARKOUR_CACHE_DIR, name)
+        if not os.path.exists(path):
+            # Log host + filename only: a signed URL's query string is a credential.
+            shown = f"{parsed.netloc}/{os.path.basename(parsed.path)}"
+            try:
+                with requests.get(url, stream=True, timeout=60) as resp:
+                    resp.raise_for_status()
+                    with open(path + ".part", "wb") as f:
+                        for block in resp.iter_content(chunk_size=1 << 20):
+                            f.write(block)
+                os.replace(path + ".part", path)
+                print(f"[assemble] downloaded parkour clip {shown}")
+            except Exception as e:
+                # Not str(e): requests puts the full (possibly signed) URL in it.
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                print(f"[assemble] couldn't download parkour clip {shown}: "
+                      f"{f'HTTP {status}' if status else type(e).__name__}")
+                if os.path.exists(path + ".part"):
+                    os.remove(path + ".part")
+                continue
+        paths.append(path)
+    return paths
+
+
 def build_parkour_background(total_duration, work_dir, w, h):
-    """Reddit-story videos use ONE continuous Minecraft parkour gameplay
-    clip cropped to fill the vertical frame, not several cut-together
-    topical b-roll clips -- that's the genre convention, and it also means
-    opening exactly one VideoFileClip (one ffmpeg reader) instead of many.
-    Picks a random clip from assets/parkour/ and a random start offset so
-    repeat uploads don't all open on the same frame; loops the clip if it's
-    shorter than the video needs."""
-    clip_paths = sorted(glob.glob(os.path.join(config.PARKOUR_DIR, "*.mp4")))
-    if not clip_paths:
-        print(f"[assemble] no parkour clips found in {config.PARKOUR_DIR} -- "
-              f"using a plain gradient background instead. See "
-              f"assets/parkour/README.txt.")
+    """Reddit-story videos use ONE continuous parkour gameplay shot filling
+    the vertical frame (the genre convention), not cut-together b-roll.
+
+    Real footage wins when there is any: a random clip from assets/parkour/
+    (or PARKOUR_CLIP_URLS) at a random start offset so repeat uploads don't
+    all open on the same frame, looped if it's shorter than the video.
+    Otherwise the gameplay is generated from scratch (src/gameplay.py) -- a
+    brand-new block-parkour course every video, so there's always real
+    moving gameplay behind the story, never a static background."""
+    clip_paths = _local_clip_paths() or _downloaded_clip_paths()
+    if clip_paths:
+        path = random.choice(clip_paths)
+        try:
+            raw = VideoFileClip(path, audio=False)
+            if raw.duration <= total_duration:
+                bg = loop_video(raw, duration=total_duration)
+            else:
+                start = random.uniform(0, raw.duration - total_duration)
+                bg = raw.subclip(start, start + total_duration)
+            print(f"[assemble] background: gameplay clip {os.path.basename(path)}")
+            return _fit_cover(bg, w, h), [raw]
+        except Exception:
+            print(f"[assemble] couldn't open {path} -- generating gameplay instead", file=sys.stderr)
+            traceback.print_exc()
+
+    try:
+        print("[assemble] background: generated block-parkour gameplay "
+              "(add real clips to assets/parkour/ or PARKOUR_CLIP_URLS to use those instead)")
+        return gameplay.build_background(total_duration, w, h), []
+    except Exception:
+        # Should never happen, but a plain background beats losing the post.
+        print("[assemble] gameplay generation FAILED -- using a plain gradient", file=sys.stderr)
+        traceback.print_exc()
         img_path = os.path.join(work_dir, "fallback_bg.png")
         _gradient_fallback_image(img_path, w, h)
         return ImageClip(img_path).set_duration(total_duration), []
 
-    path = random.choice(clip_paths)
-    raw = VideoFileClip(path, audio=False)
 
-    if raw.duration <= total_duration:
-        bg = loop_video(raw, duration=total_duration)
-    else:
-        max_start = raw.duration - total_duration
-        start = random.uniform(0, max_start)
-        bg = raw.subclip(start, start + total_duration)
-
-    bg = _fit_cover(bg, w, h)
-    return bg, [raw]
-
-
-def assemble(narration_path, background_builder, timed_captions, work_dir, out_path,
-             w=None, h=None, story_title=None, category=None):
+def assemble(narration_path, background_builder, caption_events, work_dir, out_path,
+             w=None, h=None, story_title=None, category=None, title_end=None):
+    """caption_events: [(start, end, chunk_words, active_index), ...] from
+    captions.py. title_end: when the narrator finishes reading the title --
+    the Reddit card is shown until then, and the captions take over after."""
     w = w or config.VIDEO_WIDTH
     h = h or config.VIDEO_HEIGHT
     os.makedirs(work_dir, exist_ok=True)
@@ -350,16 +448,17 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
     background = background.set_duration(total_duration)
 
     caption_layers = []
-    for idx, (start, end, text) in enumerate(timed_captions):
+    for idx, (start, end, words, active) in enumerate(caption_events):
+        end = min(end, total_duration)
         if end <= start:
             continue
         png_path = os.path.join(work_dir, f"cap_{idx}.png")
-        _render_caption_png(text, png_path, w=w)
+        _, cap_h = _render_caption_png(words, active, png_path, w=w)
         layer = (
             ImageClip(png_path)
             .set_start(start)
             .set_duration(end - start)
-            .set_position(("center", int(h * 0.66)))
+            .set_position(("center", int(h * CAPTION_CENTER_Y - cap_h / 2)))
         )
         caption_layers.append(layer)
 
@@ -371,10 +470,12 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
     if story_title:
         reddit_png = os.path.join(work_dir, "reddit_card.png")
         _render_reddit_card_png(story_title, category, reddit_png, w=w)
+        card_end = min(title_end or 4.0, total_duration)
         reddit_layer = (
             ImageClip(reddit_png)
-            .set_duration(total_duration)
-            .set_position(("center", 130))
+            .set_duration(card_end)
+            .set_position(("center", "center"))
+            .crossfadeout(min(0.25, card_end / 2))
         )
 
     layers = [background, brand_layer]

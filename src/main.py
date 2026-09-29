@@ -19,10 +19,9 @@ still surfaces it, but only after every video got a shot.
 Run locally with:  python -m src.main
 """
 import os
+import re
 import sys
 import traceback
-
-from moviepy.editor import AudioFileClip
 
 from . import (
     config,
@@ -37,11 +36,9 @@ from . import (
 )
 
 
-def _audio_duration(path):
-    probe = AudioFileClip(path)
-    d = probe.duration
-    probe.close()
-    return d
+def _hashtags(tags):
+    cleaned = (re.sub(r"[^0-9A-Za-z_]", "", str(t)) for t in tags or [])
+    return " ".join(f"#{t}" for t in cleaned if t)
 
 
 def _post_to_reels_and_tiktok(video_path, title, caption, label):
@@ -96,9 +93,10 @@ def run_reddit_story(index, session_used_categories):
     story_data = generate_reddit_story.generate(category)
     print(f"[main] Reddit story {index} title: {story_data['title']}")
 
+    # Title read first (over the Reddit card), then the story.
     narration_path = os.path.join(work_dir, "narration.mp3")
-    tts.synthesize(story_data["script"], narration_path)
-    duration = _audio_duration(narration_path)
+    narration = tts.narrate(story_data["title"], story_data["script"], work_dir, narration_path)
+    duration = narration["duration"]
 
     if (duration < config.REDDIT_STORY_TARGET_SECONDS_MIN - 5
             or duration > config.REDDIT_STORY_TARGET_SECONDS_MAX + 15):
@@ -106,20 +104,29 @@ def run_reddit_story(index, session_used_categories):
               f"target range {config.REDDIT_STORY_TARGET_SECONDS_MIN}-"
               f"{config.REDDIT_STORY_TARGET_SECONDS_MAX}s. Continuing anyway.")
 
-    timed_captions = captions.time_captions(story_data["captions"], duration)
+    if narration["words"]:
+        caption_events = captions.word_caption_events(narration["words"])
+    else:
+        print(f"[main] Reddit story {index}: TTS returned no word timings -- "
+              f"timing captions proportionally instead.")
+        caption_events = captions.proportional_caption_events(
+            story_data["script"], narration["body_start"], duration)
 
     out_path = os.path.join(work_dir, "output.mp4")
     assemble_video.assemble(
         narration_path,
         assemble_video.build_parkour_background,
-        timed_captions, work_dir, out_path,
+        caption_events, work_dir, out_path,
         w=config.VIDEO_WIDTH, h=config.VIDEO_HEIGHT,
         story_title=story_data["title"], category=category,
+        title_end=narration["body_start"],
     )
     print(f"[main] Reddit story {index} assembled: {out_path}")
 
-    caption = story_data["title"] + (chr(10) * 2) + story_data["description"]
-    _post_to_reels_and_tiktok(out_path, story_data["title"], caption, label=f"Reddit story {index}")
+    hashtags = _hashtags(story_data.get("tags"))
+    ig_caption = "\n\n".join(p for p in (story_data["title"], story_data["description"], hashtags) if p)
+    tiktok_caption = " ".join(p for p in (story_data["title"], hashtags) if p)
+    _post_to_reels_and_tiktok(out_path, tiktok_caption, ig_caption, label=f"Reddit story {index}")
     print(f"[main] Reddit story {index} done.")
 
     topics.mark_topic_used(category, used_before, used_file=config.USED_REDDIT_STORY_CATEGORIES_FILE)
