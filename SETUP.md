@@ -14,14 +14,15 @@ Everything below is required before the daily workflow does anything --
 until Parts 1-4 are done, `python -m src.main` just prints that no
 credentials are configured and exits cleanly.
 
-**Read this first:** TikTok will only accept private posts (visible to
-nobody but you) until TikTok manually audits your developer app. That
-audit is TikTok's own review process, entirely out of this pipeline's
-control, and there's no guarantee of a fast turnaround or approval for a
-new/automated account. Start the audit early (Part 3 below) since the
-queue takes time regardless, but treat TikTok as "not really live yet"
-until it's approved. Instagram has no equivalent review step for your own
-account, so it's the one worth prioritizing.
+**Read this first:** TikTok won't let an app publish public posts on its
+own until TikTok manually audits your developer app. That audit is
+TikTok's own review process, entirely out of this pipeline's control, and
+there's no guarantee of a fast turnaround or approval for a new/automated
+account. Start the audit early (Part 3 below) since the queue takes time
+regardless. Until it's approved you can still have a public account with
+public videos: each video is sent to your TikTok inbox as a draft and you
+post it with one tap (Part 6). Instagram has no equivalent review step for
+your own account.
 
 You'll also need an `ANTHROPIC_API_KEY` (from console.anthropic.com) for
 the story-writing step -- same idea as any other Claude API key.
@@ -105,12 +106,13 @@ or Creator) account, linked to a Facebook Page.
 
 ---
 
-## Part 3: TikTok (start the audit early, expect private-only for now)
+## Part 3: TikTok (start the audit early)
 
 1. Go to [developers.tiktok.com](https://developers.tiktok.com) → sign up
    → **Manage apps → Create an app**.
-2. Add the **Content Posting API** product, request the `video.publish`
-   scope.
+2. Add the **Content Posting API** product, and request both the
+   `video.publish` (Direct Post) and `video.upload` (send drafts to your
+   inbox) scopes -- Part 6 explains why both.
 3. Fill in and submit the **audit/review** request as soon as the app is
    created -- this is the queue that takes time, so starting it now (even
    before you have videos to show) is worth it. TikTok will ask what the
@@ -128,14 +130,12 @@ or Creator) account, linked to a Facebook Page.
    in-dashboard instructions for verifying that domain (usually a meta tag
    or a `tiktok-developers-site-verification=...` file served from it).
 5. While waiting on the audit, complete the OAuth flow to get a token
-   anyway (posts will just land as private/`SELF_ONLY` until approved):
-   TikTok's docs walk through the redirect-based OAuth flow under **Login
-   Kit** -- you'll end up with an access token AND a refresh_token tied to
-   your TikTok account. Save both -- you need the refresh_token for Part 5.
-6. Leave `TIKTOK_PRIVACY_LEVEL` as the default (`SELF_ONLY`) until TikTok
-   approves the app, then set the repo variable
-   `TIKTOK_PRIVACY_LEVEL=PUBLIC_TO_EVERYONE` (Settings → Secrets and
-   variables → Actions → Variables tab) to make future posts public.
+   anyway: `scripts/authorize_tiktok.py` walks through it (Part 6 step 3
+   has the exact commands) -- you'll end up with a refresh_token tied to
+   your TikTok account, which Part 5 needs.
+6. Nothing to flip when the audit passes: posts are public by default, and
+   the pipeline switches from inbox drafts to fully automatic public posts
+   on its own (Part 6).
 
 ---
 
@@ -202,11 +202,11 @@ into GitHub in step 5c, never anywhere else.
 
 ### 5b. Get a refresh_token (redo the OAuth authorize step from Part 3 if needed)
 
-If you didn't save the `refresh_token` from Part 3 step 5's response, do
-the authorize → exchange flow one more time (same steps as Part 3): visit
-the authorize URL, approve, copy the `code` from the redirect, then
-exchange it via curl. This time, save **both** `access_token` and
-`refresh_token` from the response -- you need both here.
+If you didn't save the `refresh_token` from Part 3 step 5, run the
+authorize → exchange flow with `scripts/authorize_tiktok.py` (exact
+commands in Part 6 step 3). It prints the `TIKTOK_REFRESH_TOKEN` value you
+need here, and asks TikTok for the draft permission (`video.upload`) at
+the same time.
 
 ### 5c. Create a scoped GitHub token so the workflow can update its own secrets
 
@@ -245,6 +245,63 @@ stops working (token revoked, PAT expired), the pipeline just skips
 TikTok posting and keeps posting to Instagram; check the `Refresh TikTok
 access token` step's log for a `[refresh_tiktok_token]` line explaining
 why.
+
+---
+
+## Part 6: Public TikTok posts
+
+What TikTok allows (their rules -- nothing in code can get around them):
+
+- **Before the audit passes**, an app can only Direct Post while your
+  TikTok account is **private**, and those posts are "only me". If the
+  account is public, TikTok rejects the post. What an unaudited app *can*
+  do is send the video to your TikTok **inbox as a draft**: you get a
+  notification, tap it, and post it publicly yourself.
+- **After the audit passes**, the app can post publicly by itself.
+
+The pipeline handles both automatically (`TIKTOK_POST_MODE=auto`, the
+default): it tries a public post first, and if TikTok says the app isn't
+audited yet it sends that day's videos to your inbox as drafts instead.
+The day the audit passes, posts start going up publicly on their own --
+nothing to change.
+
+One-time setup:
+
+1. **Make the TikTok account public:** TikTok app → Profile → ☰ →
+   Settings and privacy → Privacy → turn **Private account** off.
+2. **Give the app the draft permission:** developers.tiktok.com → your app
+   → Content Posting API → make sure the upload/draft permission
+   (`video.upload`) is enabled alongside Direct Post (`video.publish`).
+   Portal wording shifts; the scopes list should show both.
+3. **Re-authorize so the login includes it** (a token only has the
+   permissions it was approved with). On your computer, in this repo:
+   ```
+   python3 scripts/authorize_tiktok.py url --client-key <CLIENT_KEY> --redirect-uri <REDIRECT_URI>
+   ```
+   Use the Client Key from your app page and *exactly* the Redirect URI
+   registered under the app's Login Kit settings. Open the printed link
+   while logged into the bot's TikTok account and approve. Your callback
+   page shows a `code`; within a few minutes run:
+   ```
+   python3 scripts/authorize_tiktok.py exchange <CODE> --client-key <CLIENT_KEY> --redirect-uri <REDIRECT_URI>
+   ```
+   Paste the client secret when asked, then save the printed value as the
+   `TIKTOK_REFRESH_TOKEN` repo secret (replacing the old one). The next
+   run's `Refresh TikTok access token` step logs the permissions -- it
+   should list `video.upload`.
+4. If you ever created a `TIKTOK_PRIVACY_LEVEL` repo variable set to
+   `SELF_ONLY`, delete it (or set it to `PUBLIC_TO_EVERYONE`).
+
+**Posting a draft (until the audit passes):** after each run, open the
+TikTok app → inbox notification → the video opens in the editor. TikTok
+doesn't let apps pre-fill a draft's caption, so the run page on GitHub
+(Actions → the run → **Summary**) lists each video's caption with its
+hashtags, ready to copy. Paste it, set **Who can watch** to **Everyone**,
+and post. TikTok caps how many unposted drafts can pile up (5 per 24
+hours), so post or delete them each day -- 3 videos a day fits.
+
+`TIKTOK_POST_MODE` (repo variable) can also be `draft` (always send drafts,
+even after the audit) or `direct` (never fall back to drafts).
 
 ---
 

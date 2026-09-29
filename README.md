@@ -107,9 +107,9 @@ python -m src.main
 ```
 
 Set `REDDIT_STORIES_PER_DAY` (default 3) to change how many stories run
-per day. `TIKTOK_PRIVACY_LEVEL` controls TikTok visibility (stays
-`SELF_ONLY` until TikTok approves the app — see SETUP.md). `TTS_VOICE` /
-`TTS_RATE` change the narrator's voice and speed.
+per day. TikTok posts are public by default (`TIKTOK_PRIVACY_LEVEL`,
+`TIKTOK_POST_MODE` — see SETUP.md Part 6). `TTS_VOICE` / `TTS_RATE` change
+the narrator's voice and speed.
 
 Preview just the generated gameplay (no API keys needed):
 
@@ -119,10 +119,13 @@ python -m src.gameplay preview.mp4 --seconds 12   # or preview.png for one frame
 
 ## Realistic expectations
 
-TikTok will only accept private posts (visible to nobody but you) until
-TikTok manually audits your developer app — that's TikTok's own review
-process, entirely out of this pipeline's control, with no guaranteed
-turnaround. Instagram has no equivalent review step for your own account.
+TikTok won't let an app post publicly on its own until TikTok manually
+audits it — that's TikTok's own review process, entirely out of this
+pipeline's control, with no guaranteed turnaround or approval. Until then,
+with your TikTok account set to public, each video lands in your TikTok
+inbox as a draft and you post it publicly with one tap (SETUP.md Part 6);
+after the audit it's fully automatic. Instagram has no equivalent review
+step for your own account.
 If `assets/parkour/` is empty, videos use generated block-parkour gameplay
 — original footage, safe to monetize. If you'd rather use real Minecraft
 footage, that folder's README covers where to safely source clips you can

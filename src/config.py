@@ -22,11 +22,15 @@ R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
 IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
 IG_USER_ID = os.environ.get("IG_USER_ID", "")
 
-# TikTok Content Posting API. Until TikTok audits the developer app, every
-# post is forced private regardless of this setting -- flip it to
-# "PUBLIC_TO_EVERYONE" once the app is approved. See SETUP.md.
+# TikTok Content Posting API. Posts are public by default. Until TikTok
+# audits the developer app it won't allow that, so in "auto" mode each video
+# is sent to your TikTok inbox as a draft to post publicly with one tap --
+# see upload_tiktok.py and SETUP.md Part 6.
 TIKTOK_ACCESS_TOKEN = os.environ.get("TIKTOK_ACCESS_TOKEN", "")
-TIKTOK_PRIVACY_LEVEL = os.environ.get("TIKTOK_PRIVACY_LEVEL", "SELF_ONLY")
+TIKTOK_PRIVACY_LEVEL = os.environ.get("TIKTOK_PRIVACY_LEVEL") or "PUBLIC_TO_EVERYONE"
+TIKTOK_POST_MODE = (os.environ.get("TIKTOK_POST_MODE") or "auto").strip().lower()  # auto | direct | draft
+if TIKTOK_POST_MODE not in ("auto", "direct", "draft"):
+    TIKTOK_POST_MODE = "auto"
 
 CROSSPOST_HOSTING_ENABLED = bool(
     R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_PUBLIC_BASE_URL

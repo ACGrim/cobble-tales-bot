@@ -41,7 +41,7 @@ def refresh_tiktok_token(client_key, client_secret, refresh_token):
     body = resp.json()
     if "access_token" not in body or "refresh_token" not in body:
         raise RuntimeError(f"unexpected response body: {body}")
-    return body["access_token"], body["refresh_token"]
+    return body["access_token"], body["refresh_token"], body.get("scope", "")
 
 
 def update_github_secret(repo, pat, secret_name, secret_value):
@@ -93,7 +93,7 @@ def main():
         return
 
     try:
-        new_access_token, new_refresh_token = refresh_tiktok_token(
+        new_access_token, new_refresh_token, scope = refresh_tiktok_token(
             client_key, client_secret, refresh_token
         )
     except Exception as exc:
@@ -106,6 +106,15 @@ def main():
         return
 
     print("[refresh_tiktok_token] got a fresh access_token + refresh_token from TikTok.")
+    if scope:
+        print(f"[refresh_tiktok_token] permissions on this TikTok login: {scope}")
+        if "video.upload" not in scope.split(","):
+            print(
+                "[refresh_tiktok_token] NOTE: no video.upload permission, so videos "
+                "can't be sent to your TikTok inbox as drafts -- with a public "
+                "account and an unaudited app, TikTok posts will fail. Re-authorize "
+                "with scripts/authorize_tiktok.py (SETUP.md Part 6)."
+            )
 
     if github_env_path:
         with open(github_env_path, "a") as f:

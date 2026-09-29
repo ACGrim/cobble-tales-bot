@@ -41,7 +41,15 @@ def _hashtags(tags):
     return " ".join(f"#{t}" for t in cleaned if t)
 
 
-def _post_to_reels_and_tiktok(video_path, title, caption, label):
+def _add_to_run_summary(markdown):
+    """Appends to the GitHub Actions run page's summary (no-op locally)."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(markdown + "\n")
+
+
+def _post_to_reels_and_tiktok(video_path, title, caption, label, duration=None):
     """Uploads a finished video to Instagram Reels and/or TikTok. Never
     raises -- a posting failure here shouldn't take down the rest of the
     run. Skips entirely (silently) if the R2 hosting credentials aren't
@@ -68,8 +76,19 @@ def _post_to_reels_and_tiktok(video_path, title, caption, label):
 
     if config.TIKTOK_CROSSPOST_ENABLED:
         try:
-            upload_tiktok.upload(public_url, title)
-            print(f"[main] {label}: TikTok SUCCESS")
+            result = upload_tiktok.upload(public_url, title, duration=duration)
+            if result["kind"] == "draft":
+                print(f"[main] {label}: TikTok draft is in your TikTok inbox -- open the "
+                      f"TikTok app to post it (caption is on this run's summary page)")
+                # TikTok drafts can't carry a caption, so put it where it's
+                # easy to copy from a phone: the Actions run's summary page.
+                _add_to_run_summary(
+                    f"### TikTok draft ready: {label}\n"
+                    f"Open the TikTok app, tap the inbox notification, paste this caption, "
+                    f"set **Who can watch** to **Everyone**, and post.\n\n"
+                    f"```\n{title}\n```\n")
+            else:
+                print(f"[main] {label}: TikTok SUCCESS ({result['privacy']})")
         except Exception:
             print(f"[main] {label}: TikTok FAILED", file=sys.stderr)
             traceback.print_exc()
@@ -126,7 +145,8 @@ def run_reddit_story(index, session_used_categories):
     hashtags = _hashtags(story_data.get("tags"))
     ig_caption = "\n\n".join(p for p in (story_data["title"], story_data["description"], hashtags) if p)
     tiktok_caption = " ".join(p for p in (story_data["title"], hashtags) if p)
-    _post_to_reels_and_tiktok(out_path, tiktok_caption, ig_caption, label=f"Reddit story {index}")
+    _post_to_reels_and_tiktok(out_path, tiktok_caption, ig_caption,
+                              label=f"Reddit story {index}", duration=duration)
     print(f"[main] Reddit story {index} done.")
 
     topics.mark_topic_used(category, used_before, used_file=config.USED_REDDIT_STORY_CATEGORIES_FILE)

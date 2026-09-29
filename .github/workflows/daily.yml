@@ -62,7 +62,11 @@ jobs:
           # TIKTOK_ACCESS_TOKEN is NOT set here -- the "Refresh TikTok
           # access token" step above sets it fresh via $GITHUB_ENV so
           # every run uses a token that's at most a few seconds old.
-          TIKTOK_PRIVACY_LEVEL: ${{ vars.TIKTOK_PRIVACY_LEVEL || 'SELF_ONLY' }}
+          # Public by default. Until TikTok audits the app, "auto" mode sends
+          # each video to your TikTok inbox as a draft to post with one tap
+          # (see SETUP.md Part 6).
+          TIKTOK_PRIVACY_LEVEL: ${{ vars.TIKTOK_PRIVACY_LEVEL || 'PUBLIC_TO_EVERYONE' }}
+          TIKTOK_POST_MODE: ${{ vars.TIKTOK_POST_MODE || 'auto' }}
           # Optional repo Variables (Settings -> Secrets and variables ->
           # Actions -> Variables). PARKOUR_CLIP_URLS: direct links to your own
           # real gameplay clips (e.g. in your R2 bucket) -- leave unset to use
