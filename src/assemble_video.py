@@ -309,7 +309,8 @@ def _fit_cover(clip, w, h):
 
 
 def _clips_in(folder):
-    return sorted(glob.glob(os.path.join(folder, "*.mp4")))
+    # skip half-written files from tools/blocky_background/render_clips.py
+    return sorted(p for p in glob.glob(os.path.join(folder, "*.mp4")) if ".part." not in os.path.basename(p))
 
 
 def build_background(total_duration, work_dir, w, h):
