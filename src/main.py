@@ -5,8 +5,9 @@ Reddit-story videos and posts them to Instagram Reels and/or TikTok.
 
 This is a wholly separate content pipeline from any YouTube channel --
 original (not scraped) short stories in the voice of viral "Reddit story"
-posts (AITA, TIFU, confession, revenge, etc.), narrated over Minecraft
-parkour footage. Nothing here ever touches YouTube.
+posts (AITA, TIFU, confession, revenge, etc.), narrated over Pip, the
+channel's blocky mascot, running an obstacle course (or Minecraft parkour
+footage -- see config.BACKGROUND_STYLE). Nothing here ever touches YouTube.
 
 Each video is fully independent end to end -- pick category -> write story
 -> voice it -> build the video -> upload -> record as used.
@@ -111,7 +112,7 @@ def run_reddit_story(index, session_used_categories):
     out_path = os.path.join(work_dir, "output.mp4")
     assemble_video.assemble(
         narration_path,
-        assemble_video.build_parkour_background,
+        assemble_video.build_background,
         timed_captions, work_dir, out_path,
         w=config.VIDEO_WIDTH, h=config.VIDEO_HEIGHT,
         story_title=story_data["title"], category=category,

@@ -9,3 +9,6 @@ token.json
 client_secret*.json
 !assets/music/*.mp3
 !assets/parkour/*.mp4
+!assets/blocky/*.mp4
+*.part.mp4
+node_modules/
