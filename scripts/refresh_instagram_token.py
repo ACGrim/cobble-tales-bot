@@ -78,9 +78,10 @@ def update_github_secret(repo, pat, secret_name, secret_value):
 
 
 def main():
-    # .strip(): a secret pasted with a trailing line break makes Meta answer
-    # "Failed to decode" (code 190) on the refresh call.
-    access_token = os.environ.get("IG_ACCESS_TOKEN", "").strip()
+    # A token is one line. The secret was saved with extra text on following
+    # lines; GitHub's $GITHUB_ENV hand-off happened to drop it for posting, but
+    # sending the whole value made every refresh fail with "Failed to decode".
+    access_token = next((ln.strip() for ln in os.environ.get("IG_ACCESS_TOKEN", "").splitlines() if ln.strip()), "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     pat = os.environ.get("GH_SECRETS_PAT", "").strip()
     github_env_path = os.environ.get("GITHUB_ENV", "")

@@ -68,9 +68,11 @@ def check_tiktok():
 
 def check_instagram():
     raw = os.environ.get("IG_ACCESS_TOKEN", "")
-    tok = raw.strip()
-    if raw != tok:
-        print("NOTE  IG_ACCESS_TOKEN secret has extra spaces/line breaks around it (the scripts now trim them)")
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    if len(lines) > 1 or raw != raw.strip():
+        print(f"NOTE  IG_ACCESS_TOKEN secret is {len(lines)} non-empty line(s), lengths {[len(x) for x in lines]}; "
+              f"surrounding whitespace: {raw != raw.strip()}. A token is a single line, so only the first line is used.")
+    tok = lines[0] if lines else ""
     if not tok:
         report(False, "Instagram", "IG_ACCESS_TOKEN not set")
         return
