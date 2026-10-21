@@ -605,6 +605,10 @@ function applyPose(st, t) {
       armL.rotation.x = -2.6 * k; armR.rotation.x = -2.6 * k; armL.rotation.z = 0.07 + 0.25 * k; armR.rotation.z = -0.07 - 0.25 * k;
       legL.rotation.x = -0.85 * k; legR.rotation.x = 0.5 * k; upper.rotation.x = 0.06 * k;
       if (st.spin) { rig.rotation.x = -st.spin; rig.position.y = 1.2 * Math.sin(st.spin / 2) * 0; } break; }
+    case 'wave':
+      upper.position.y = 0.82 + br * 0.012;
+      armR.rotation.z = -2.7 + Math.sin(t * 12) * 0.38; armR.rotation.x = -0.15;
+      armL.rotation.z = 0.25; head.rotation.z = Math.sin(t * 3) * 0.08; break;
     case 'flail': { const f = t * 20;
       armL.rotation.z = 2.4 + Math.sin(f) * 0.6; armR.rotation.z = -2.4 - Math.sin(f + 1.3) * 0.6;
       legL.rotation.x = Math.sin(f * 0.7) * 1.0; legR.rotation.x = -Math.sin(f * 0.7) * 1.0; rig.rotation.x = st.spin * 0.6; break; }
@@ -772,8 +776,34 @@ function frame(t, dt) {
   renderer.render(scene, camera);
 }
 
+// Posed still for channel art: renders the course at time t, then places Pip
+// and the camera relative to Pip's position. Returns a PNG data URL.
+function still(o) {
+  const t = o.t || 5;
+  frame(t, 1 / 30);
+  const base = stateAt(t);
+  const st = Object.assign({}, base, { u: 0.35, lt: 0.3, squash: 0, scale: 1, spin: 0 }, o.pip || {});
+  const px = st.x, py = st.y, pz = -st.s;
+  const r = pip.root; r.visible = true; r.position.set(px, py + (o.lift || 0), pz); r.rotation.set(0, st.yaw, 0); r.scale.set(1, 1, 1);
+  applyPose(st, o.poseT || t);
+  if (o.face) { pip.faceMat.map = pip.faces[o.face]; pip.faceMat.needsUpdate = true; }
+  const c = o.cam;
+  camera.fov = c.fov || camera.fov; camera.updateProjectionMatrix();
+  camera.position.set(px + c.pos[0], py + c.pos[1], pz + c.pos[2]);
+  camera.lookAt(px + c.look[0], py + c.look[1], pz + c.look[2]);
+  if (o.shift) { // slide the frame so Pip lands off-center (fractions of width/height)
+    const sz = renderer.getSize(new THREE.Vector2());
+    camera.setViewOffset(sz.x, sz.y, o.shift[0] * sz.x, o.shift[1] * sz.y, sz.x, sz.y);
+  } else camera.clearViewOffset();
+  sun.position.set(px + (o.sun ? o.sun[0] : -7), py + 18, pz + (o.sun ? o.sun[2] : 9)); sun.target.position.set(px, py, pz);
+  for (const [, g] of chunks) g.visible = true;
+  renderer.render(scene, camera);
+  return canvas.toDataURL('image/png');
+}
+
 window.Course = {
   setup,
+  still,
   // render n frames starting at time t0 and return them as JPEG data URLs
   frames(t0, n, fps, quality = 0.92) {
     const out = [], dt = 1 / fps;
