@@ -98,7 +98,9 @@ def run_reddit_story(index, session_used_categories):
     print(f"[main] Reddit story {index} title: {story_data['title']}")
 
     narration_path = os.path.join(work_dir, "narration.mp3")
-    tts.synthesize(story_data["script"], narration_path)
+    voice = tts.voice_for(story_data.get("narrator", "either"))
+    print(f"[main] Reddit story {index} narrator: {story_data.get('narrator', 'either')} -> {voice}")
+    tts.synthesize(story_data["script"], narration_path, voice=voice)
     duration = _audio_duration(narration_path)
 
     if (duration < config.REDDIT_STORY_TARGET_SECONDS_MIN - 5

@@ -99,12 +99,23 @@ python -m src.main
 ```
 
 Set `REDDIT_STORIES_PER_DAY` (default 3) to change how many stories run
-per day. `TIKTOK_PRIVACY_LEVEL` controls TikTok visibility (stays
-`SELF_ONLY` until TikTok approves the app — see SETUP.md).
+per day. TikTok posts go out public (`TIKTOK_PRIVACY_LEVEL` in
+`.github/workflows/daily.yml`); if TikTok ever refuses a public post,
+`TIKTOK_FALLBACK` sends the video to your TikTok inbox (`inbox`, default) or
+posts it privately (`private`) so it still goes up.
+Narration uses two natural-sounding voices, Andrew for male narrators and Ava
+for female ones (`TTS_VOICE_MALE` / `TTS_VOICE_FEMALE`, or force one with
+`TTS_VOICE`); each story says which its narrator is.
 `BACKGROUND_STYLE` picks the background (`blocky`, `parkour` or `mix`; in
 GitHub Actions set it as a repo Variable). `TIKTOK_IS_AIGC` (default `true`)
 ticks TikTok's "AI-generated content" label on each post, since the stories
 are AI-written.
+
+## Checking tokens
+
+If a run logs a token warning, open the Actions tab and run **Check tokens**.
+It posts nothing; it tests `GH_SECRETS_PAT`, the TikTok refresh and the
+Instagram token + refresh, and prints each service's exact error.
 
 ## Realistic expectations
 
