@@ -64,6 +64,18 @@ def check_tiktok():
     same = b.get("refresh_token") == rt
     days = int(b.get("refresh_expires_in", 0)) // 86400
     report(True, "TikTok", f"refresh works; TikTok returned {'the SAME' if same else 'a NEW'} refresh token, valid for ~{days} more days; scopes: {b.get('scope')}")
+    ci = requests.post("https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+                       headers={"Authorization": f"Bearer {b['access_token']}", "Content-Type": "application/json; charset=UTF-8"}, timeout=30)
+    cb = body_of(ci)
+    d = cb.get("data", {}) if isinstance(cb, dict) else {}
+    opts = d.get("privacy_level_options", [])
+    if ci.status_code == 200 and opts:
+        public = "PUBLIC_TO_EVERYONE" in opts
+        report(public, "TikTok public posting",
+               f"@{d.get('creator_username')} may post as {opts}" + ("" if public else
+               " -- PUBLIC_TO_EVERYONE is missing, so TikTok will only accept private posts (the developer app needs TikTok's audit, or the account is private)"))
+    else:
+        report(False, "TikTok creator info", f"({ci.status_code}): {cb}")
 
 
 def check_instagram():
@@ -82,6 +94,16 @@ def check_instagram():
         report(True, "Instagram token", f"valid for @{b.get('username')} ({b.get('account_type')})")
     else:
         report(False, "Instagram token", f"rejected ({me.status_code}): {body_of(me)}")
+    if os.environ.get("LIST_IG_MEDIA") == "1":
+        items, url, params = [], f"{IG_BASE}/v25.0/me/media", {"fields": "id,timestamp,media_product_type,caption", "limit": 100, "access_token": tok}
+        while url:
+            r = requests.get(url, params=params, timeout=30); jb = body_of(r)
+            if r.status_code != 200: print(f"media list failed ({r.status_code}): {jb}"); break
+            items += jb.get("data", []); url = jb.get("paging", {}).get("next"); params = None
+        print(f"INFO  Instagram posts on the account: {len(items)}")
+        for it in items:
+            cap = (it.get("caption") or "").split("\n")[0][:70]
+            print(f"MEDIA {it['id']} {it['timestamp']} {it.get('media_product_type')} | {cap}")
     rf = requests.get(f"{IG_BASE}/refresh_access_token", params={"grant_type": "ig_refresh_token", "access_token": tok}, timeout=30)
     b = body_of(rf)
     if rf.status_code == 200 and isinstance(b, dict) and "access_token" in b:
