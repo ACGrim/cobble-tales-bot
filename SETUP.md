@@ -245,3 +245,41 @@ stops working (token revoked, PAT expired), the pipeline just skips
 TikTok posting and keeps posting to Instagram; check the `Refresh TikTok
 access token` step's log for a `[refresh_tiktok_token]` line explaining
 why.
+
+---
+
+## YouTube Shorts (optional, one-time)
+
+The daily run also uploads each video to YouTube as a public Short once
+these three GitHub secrets exist: `YT_CLIENT_ID`, `YT_CLIENT_SECRET`,
+`YT_REFRESH_TOKEN`. Until then, YouTube is skipped and nothing else changes.
+
+1. **Channel.** In the Google account you'll use, create a YouTube channel
+   named "Cobble Tales" (youtube.com → your avatar → Create a channel). If the
+   account already has the Career Edge channel, create Cobble Tales as a
+   second channel via YouTube Settings → "Add or manage your channel(s)".
+2. **OAuth client.** You can reuse the Google Cloud project you made for
+   career-edge-bot. In console.cloud.google.com → APIs & Services:
+   - Make sure **YouTube Data API v3** is enabled.
+   - OAuth consent screen: add the scopes `youtube.upload` and
+     `youtube.readonly`. **Publish** the app (if it stays in "Testing",
+     Google expires the refresh token every 7 days).
+   - Credentials → Create credentials → OAuth client ID → **Desktop app** →
+     download the JSON as `client_secret.json`.
+3. **Mint the token on your computer:**
+   ```
+   pip install google-auth-oauthlib google-api-python-client
+   python scripts/youtube_oauth_setup.py path/to/client_secret.json
+   ```
+   Sign in, and when Google asks which channel, pick **Cobble Tales**. The
+   script prints which channel it connected to and the three values.
+4. **Save the secrets:** cobble-tales-bot → Settings → Secrets and variables
+   → Actions → New repository secret, once each for `YT_CLIENT_ID`,
+   `YT_CLIENT_SECRET`, `YT_REFRESH_TOKEN`. Then delete `client_secret.json`.
+5. **Check it:** Actions → **Check tokens** → Run workflow. The YouTube line
+   should name the Cobble Tales channel.
+
+Shorts go up public (`YT_PRIVACY_STATUS`), not made for kids, and with
+YouTube's "altered or synthetic content" label on (`YT_SYNTHETIC_MEDIA`),
+since the stories and voices are AI-generated. Uploads cost 1 unit from the
+YouTube upload quota (100 a day), so 3 Shorts a day is well inside it.

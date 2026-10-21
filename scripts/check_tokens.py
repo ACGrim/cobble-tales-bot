@@ -113,8 +113,29 @@ def check_instagram():
         report(False, "Instagram refresh", f"failed ({rf.status_code}): {b}")
 
 
+def check_youtube():
+    ids = [os.environ.get(k, "").strip() for k in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")]
+    if not all(ids):
+        print("SKIP  YouTube: YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN not set yet (Shorts uploads are off)")
+        return
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    creds = Credentials(None, refresh_token=ids[2], token_uri="https://oauth2.googleapis.com/token",
+                        client_id=ids[0], client_secret=ids[1])
+    try:
+        creds.refresh(Request())
+    except Exception as exc:
+        report(False, "YouTube", f"refresh token rejected: {exc} (re-run scripts/youtube_oauth_setup.py; "
+                                  "if the Google OAuth app is in Testing, tokens expire after 7 days)")
+        return
+    me = build("youtube", "v3", credentials=creds, cache_discovery=False).channels().list(part="snippet", mine=True).execute()
+    names = [c["snippet"]["title"] for c in me.get("items", [])]
+    report(bool(names), "YouTube", f"uploads will go to channel: {', '.join(names) or '(no channel found)'}")
+
+
 if __name__ == "__main__":
-    for fn in (check_github_pat, check_tiktok, check_instagram):
+    for fn in (check_github_pat, check_tiktok, check_instagram, check_youtube):
         try:
             fn()
         except Exception as exc:  # keep checking the rest

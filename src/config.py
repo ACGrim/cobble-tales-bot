@@ -39,6 +39,18 @@ CROSSPOST_HOSTING_ENABLED = bool(
 IG_CROSSPOST_ENABLED = CROSSPOST_HOSTING_ENABLED and bool(IG_ACCESS_TOKEN and IG_USER_ID)
 TIKTOK_CROSSPOST_ENABLED = CROSSPOST_HOSTING_ENABLED and bool(TIKTOK_ACCESS_TOKEN)
 
+# YouTube Shorts (YouTube Data API v3). Uploads straight from the file, so it
+# doesn't need R2. Skipped until all three secrets are set -- see SETUP.md,
+# "YouTube Shorts", and scripts/youtube_oauth_setup.py.
+YT_CLIENT_ID = os.environ.get("YT_CLIENT_ID", "").strip()
+YT_CLIENT_SECRET = os.environ.get("YT_CLIENT_SECRET", "").strip()
+YT_REFRESH_TOKEN = os.environ.get("YT_REFRESH_TOKEN", "").strip()
+YT_UPLOAD_ENABLED = bool(YT_CLIENT_ID and YT_CLIENT_SECRET and YT_REFRESH_TOKEN)
+YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "public").strip() or "public"  # public | unlisted | private
+YT_CATEGORY_ID = os.environ.get("YT_CATEGORY_ID", "24")  # 24 = Entertainment
+# YouTube's "altered or synthetic content" label; the stories and voices are AI-made.
+YT_SYNTHETIC_MEDIA = os.environ.get("YT_SYNTHETIC_MEDIA", "true").strip().lower() not in ("0", "false", "no")
+
 # --- Brand / format settings --------------------------------------------
 CHANNEL_BRAND = "Cobble Tales"
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
