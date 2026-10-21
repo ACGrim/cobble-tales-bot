@@ -106,6 +106,12 @@ GitHub Actions set it as a repo Variable). `TIKTOK_IS_AIGC` (default `true`)
 ticks TikTok's "AI-generated content" label on each post, since the stories
 are AI-written.
 
+## Checking tokens
+
+If a run logs a token warning, open the Actions tab and run **Check tokens**.
+It posts nothing; it tests `GH_SECRETS_PAT`, the TikTok refresh and the
+Instagram token + refresh, and prints each service's exact error.
+
 ## Realistic expectations
 
 TikTok will only accept private posts (visible to nobody but you) until

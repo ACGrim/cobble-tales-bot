@@ -4,8 +4,6 @@ name: Check tokens
 # Posts nothing. Run it from the Actions tab whenever a token warning shows up.
 on:
   workflow_dispatch: {}
-  push:
-    branches: [token-fixes]   # temporary: lets the fix branch run a check before it's merged
 
 permissions:
   contents: read
