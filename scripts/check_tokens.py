@@ -95,7 +95,7 @@ def check_instagram():
     else:
         report(False, "Instagram token", f"rejected ({me.status_code}): {body_of(me)}")
     if os.environ.get("LIST_IG_MEDIA") == "1":
-        items, url, params = [], f"{IG_BASE}/v25.0/me/media", {"fields": "id,timestamp,media_product_type,caption", "limit": 100, "access_token": tok}
+        items, url, params = [], f"{IG_BASE}/v25.0/me/media", {"fields": "id,timestamp,media_product_type,caption,permalink", "limit": 100, "access_token": tok}
         while url:
             r = requests.get(url, params=params, timeout=30); jb = body_of(r)
             if r.status_code != 200: print(f"media list failed ({r.status_code}): {jb}"); break
@@ -103,7 +103,7 @@ def check_instagram():
         print(f"INFO  Instagram posts on the account: {len(items)}")
         for it in items:
             cap = (it.get("caption") or "").split("\n")[0][:70]
-            print(f"MEDIA {it['id']} {it['timestamp']} {it.get('media_product_type')} | {cap}")
+            print(f"MEDIA {it['id']} {it['timestamp']} {it.get('permalink')} | {cap}")
     rf = requests.get(f"{IG_BASE}/refresh_access_token", params={"grant_type": "ig_refresh_token", "access_token": tok}, timeout=30)
     b = body_of(rf)
     if rf.status_code == 200 and isinstance(b, dict) and "access_token" in b:

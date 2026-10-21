@@ -26,7 +26,12 @@ IG_USER_ID = os.environ.get("IG_USER_ID", "").strip()
 # post is forced private regardless of this setting -- flip it to
 # "PUBLIC_TO_EVERYONE" once the app is approved. See SETUP.md.
 TIKTOK_ACCESS_TOKEN = os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()
-TIKTOK_PRIVACY_LEVEL = os.environ.get("TIKTOK_PRIVACY_LEVEL", "SELF_ONLY")
+TIKTOK_PRIVACY_LEVEL = os.environ.get("TIKTOK_PRIVACY_LEVEL", "PUBLIC_TO_EVERYONE").strip() or "PUBLIC_TO_EVERYONE"
+# If TikTok refuses a public post (e.g. the developer app loses its audit
+# status), what to do instead so the video still goes up:
+#   "inbox"   -- send it to the TikTok app's inbox to finish and post publicly by hand
+#   "private" -- post it as SELF_ONLY (only you can see it)
+TIKTOK_FALLBACK = os.environ.get("TIKTOK_FALLBACK", "inbox").strip().lower()
 
 CROSSPOST_HOSTING_ENABLED = bool(
     R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_PUBLIC_BASE_URL
@@ -37,7 +42,14 @@ TIKTOK_CROSSPOST_ENABLED = CROSSPOST_HOSTING_ENABLED and bool(TIKTOK_ACCESS_TOKE
 # --- Brand / format settings --------------------------------------------
 CHANNEL_BRAND = "Cobble Tales"
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
-TTS_VOICE = os.environ.get("TTS_VOICE", "en-US-GuyNeural")  # edge-tts voice name
+# Narration voices (edge-tts, free). The Multilingual "conversation" voices
+# sound far more natural than the older news-style GuyNeural. Each story says
+# whether its narrator is a man or a woman ("my husband..." -> woman), and the
+# matching voice reads it. TTS_VOICE, if set, forces one voice for everything.
+TTS_VOICE = os.environ.get("TTS_VOICE", "").strip()
+TTS_VOICE_MALE = os.environ.get("TTS_VOICE_MALE", "en-US-AndrewMultilingualNeural")
+TTS_VOICE_FEMALE = os.environ.get("TTS_VOICE_FEMALE", "en-US-AvaMultilingualNeural")
+TTS_RATE = os.environ.get("TTS_RATE", "+4%")
 
 # Vertical (9:16), Reels/TikTok native format
 VIDEO_WIDTH = 1080

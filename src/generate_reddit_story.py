@@ -51,7 +51,10 @@ verbatim (just re-chunked)"],
   "description": "string, 1-2 sentences for the post caption, written to make someone \
 want to know how it ends -- includes a call to follow for daily stories",
   "tags": ["8-12 relevant hashtags for the genre, lowercase, no # symbol, e.g. \
-'redditstories', 'storytime', 'aita'"]
+'redditstories', 'storytime', 'aita'"],
+  "narrator": "string, 'female', 'male' or 'either' -- the narrator's gender as \
+the story implies it (e.g. 'my husband' or 'my boyfriend' usually means 'female', \
+'my wife' usually 'male'); 'either' when nothing implies it. Picks the voice."
 }
 
 Rules:
@@ -93,4 +96,6 @@ def generate(category: str) -> dict:
     if missing:
         raise ValueError(f"Claude output missing fields: {missing}\nRaw: {raw[:500]}")
 
+    if str(data.get("narrator", "")).lower() not in ("female", "male", "either"):
+        data["narrator"] = "either"
     return data
