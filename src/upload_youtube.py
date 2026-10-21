@@ -38,7 +38,9 @@ def _service():
         token_uri=TOKEN_URI,
         client_id=config.YT_CLIENT_ID,
         client_secret=config.YT_CLIENT_SECRET,
-        scopes=SCOPES,
+        # No scopes here on purpose: refresh with whatever the token was
+        # granted. The Career Edge token only has youtube.upload; asking for
+        # more on refresh would make Google reject it (invalid_scope).
     )
     creds.refresh(Request())
     return build("youtube", "v3", credentials=creds, cache_discovery=False)

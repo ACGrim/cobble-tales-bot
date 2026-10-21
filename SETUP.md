@@ -250,6 +250,23 @@ why.
 
 ## YouTube Shorts (optional, one-time)
 
+**Using the Career Edge channel (now rebranded Cobble Tales, @cobble_tales):**
+career-edge-bot already has a working YouTube login for that channel in its
+`.env` file. Copy its `YT_CLIENT_ID`, `YT_CLIENT_SECRET` and
+`YT_REFRESH_TOKEN` values into this repo's Actions secrets (same names), then
+run **Check tokens**. With the GitHub CLI on your Mac that's:
+```
+cd ~/Desktop/career-edge-bot
+for k in YT_CLIENT_ID YT_CLIENT_SECRET YT_REFRESH_TOKEN; do
+  gh secret set "$k" -R ACGrim/cobble-tales-bot --body "$(grep "^$k=" .env | cut -d= -f2-)"
+done
+```
+If Check tokens says the refresh token is rejected (Google expires tokens
+after 7 days while the OAuth app is in "Testing"), mint a new one with the
+steps below and pick the Cobble Tales channel.
+
+**Setting up a channel from scratch:**
+
 The daily run also uploads each video to YouTube as a public Short once
 these three GitHub secrets exist: `YT_CLIENT_ID`, `YT_CLIENT_SECRET`,
 `YT_REFRESH_TOKEN`. Until then, YouTube is skipped and nothing else changes.

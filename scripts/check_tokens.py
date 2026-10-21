@@ -129,7 +129,13 @@ def check_youtube():
         report(False, "YouTube", f"refresh token rejected: {exc} (re-run scripts/youtube_oauth_setup.py; "
                                   "if the Google OAuth app is in Testing, tokens expire after 7 days)")
         return
-    me = build("youtube", "v3", credentials=creds, cache_discovery=False).channels().list(part="snippet", mine=True).execute()
+    try:
+        me = build("youtube", "v3", credentials=creds, cache_discovery=False).channels().list(part="snippet", mine=True).execute()
+    except Exception as exc:
+        if "insufficient" in str(exc).lower() or "403" in str(exc):
+            report(True, "YouTube", "token works (it only has upload permission, so the channel name can't be shown)")
+            return
+        raise
     names = [c["snippet"]["title"] for c in me.get("items", [])]
     report(bool(names), "YouTube", f"uploads will go to channel: {', '.join(names) or '(no channel found)'}")
 
