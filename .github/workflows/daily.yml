@@ -54,6 +54,10 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          # YouTube Shorts -- skipped until these three secrets exist (SETUP.md, "YouTube Shorts")
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           # IG_ACCESS_TOKEN is NOT set here -- the "Refresh Instagram
           # access token" step above sets it fresh via $GITHUB_ENV, same
           # reasoning as TIKTOK_ACCESS_TOKEN below.

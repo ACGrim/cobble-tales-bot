@@ -81,6 +81,20 @@ def _post_to_reels_and_tiktok(video_path, title, caption, label):
     hosting.delete(key)
 
 
+def _post_to_youtube(video_path, title, description, tags, label):
+    """Uploads the finished video as a YouTube Short. Never raises; skipped
+    until the YT_* secrets are set (see SETUP.md, "YouTube Shorts")."""
+    if not config.YT_UPLOAD_ENABLED:
+        return
+    try:
+        from . import upload_youtube  # imported lazily: only needed when YouTube is set up
+        upload_youtube.upload(video_path, title, description, tags)
+        print(f"[main] {label}: YouTube Shorts SUCCESS")
+    except Exception:
+        print(f"[main] {label}: YouTube FAILED", file=sys.stderr)
+        traceback.print_exc()
+
+
 def run_reddit_story(index, session_used_categories):
     """Builds and posts one Reddit-story video. Returns the category on
     success (so the caller can mark it used), raises on failure."""
@@ -123,6 +137,8 @@ def run_reddit_story(index, session_used_categories):
 
     caption = story_data["title"] + (chr(10) * 2) + story_data["description"]
     _post_to_reels_and_tiktok(out_path, story_data["title"], caption, label=f"Reddit story {index}")
+    _post_to_youtube(out_path, story_data["title"], story_data["description"],
+                     story_data.get("tags", []), label=f"Reddit story {index}")
     print(f"[main] Reddit story {index} done.")
 
     topics.mark_topic_used(category, used_before, used_file=config.USED_REDDIT_STORY_CATEGORIES_FILE)
@@ -132,8 +148,8 @@ def run_reddit_story(index, session_used_categories):
 def run():
     os.makedirs(config.WORK_DIR, exist_ok=True)
 
-    if not (config.IG_CROSSPOST_ENABLED or config.TIKTOK_CROSSPOST_ENABLED):
-        print("[main] No Instagram/TikTok credentials configured yet -- nothing to do. "
+    if not (config.IG_CROSSPOST_ENABLED or config.TIKTOK_CROSSPOST_ENABLED or config.YT_UPLOAD_ENABLED):
+        print("[main] No Instagram/TikTok/YouTube credentials configured yet -- nothing to do. "
               "See SETUP.md.")
         return
 

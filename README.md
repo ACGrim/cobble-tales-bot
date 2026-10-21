@@ -1,4 +1,4 @@
-# Cobble Tales — automated daily Reddit-story videos for Instagram Reels + TikTok
+# Cobble Tales — automated daily Reddit-story videos for Instagram Reels, TikTok and YouTube Shorts
 
 A fully automated content pipeline that writes, voices, edits, and posts
 **REDDIT_STORIES_PER_DAY original "Reddit story" style videos every day**
@@ -8,7 +8,8 @@ your computer being on, or on any Claude session staying open.
 
 This was split out of the `career-edge-bot` repo (a separate YouTube
 Shorts/long-form channel) so the two content pipelines — and their
-credentials — are fully independent. Nothing here ever touches YouTube,
+credentials — are fully independent. This repo now also posts Shorts to its own
+Cobble Tales YouTube channel (separate credentials from career-edge-bot),
 and nothing in `career-edge-bot` touches Instagram/TikTok.
 
 **Format:** original (not scraped) short stories written in the voice and
@@ -63,6 +64,7 @@ src/
   hosting.py               Cloudflare R2 temporary public hosting
   upload_instagram.py      Instagram Graph API Reels publish
   upload_tiktok.py         TikTok Content Posting API publish
+  upload_youtube.py        YouTube Data API upload as a Short
   topics.py                category rotation bookkeeping
   config.py                central env-var config
 scripts/
