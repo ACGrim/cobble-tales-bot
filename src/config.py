@@ -50,6 +50,19 @@ VIDEO_HEIGHT = 1920
 # assets/parkour/), the genre convention, rather than cut-between-topical
 # b-roll.
 REDDIT_STORIES_PER_DAY = int(os.environ.get("REDDIT_STORIES_PER_DAY", "3"))
+
+# Which background plays behind the story:
+#   "blocky"  -- Pip, the channel's blocky mascot, running an obstacle course
+#                (original animation from assets/blocky/, the default)
+#   "parkour" -- Minecraft parkour gameplay from assets/parkour/
+#   "mix"     -- picks randomly from both folders for each video
+# Either style falls back to the other folder if its own is empty, then to a
+# plain gradient.
+BACKGROUND_STYLE = os.environ.get("BACKGROUND_STYLE", "blocky").strip().lower() or "blocky"
+
+# Tick TikTok's "AI-generated content" label on every post. The stories are
+# written by Claude, so this is on by default. Set to "false" to turn it off.
+TIKTOK_IS_AIGC = os.environ.get("TIKTOK_IS_AIGC", "true").strip().lower() not in ("0", "false", "no")
 REDDIT_STORY_TARGET_SECONDS_MIN = 40
 REDDIT_STORY_TARGET_SECONDS_MAX = 75
 
@@ -59,6 +72,7 @@ DATA_DIR = os.path.join(ROOT_DIR, "data")
 ASSETS_DIR = os.path.join(ROOT_DIR, "assets")
 MUSIC_DIR = os.path.join(ASSETS_DIR, "music")
 PARKOUR_DIR = os.path.join(ASSETS_DIR, "parkour")
+BLOCKY_DIR = os.path.join(ASSETS_DIR, "blocky")  # Pip obstacle-course clips, see tools/blocky_background/
 WORK_DIR = os.path.join(ROOT_DIR, "work")  # scratch dir, gitignored
 
 REDDIT_STORY_CATEGORIES_FILE = os.path.join(DATA_DIR, "reddit_story_categories.json")

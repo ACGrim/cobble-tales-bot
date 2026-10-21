@@ -1,0 +1,808 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Cobble Tales Blocky Course</title>
+<!--
+  Endless, procedurally generated blocky obstacle course starring Pip, the
+  Cobble Tales mascot, framed for 9:16 vertical video. This is the
+  background layer for the Reddit-story videos (the replacement for
+  Minecraft parkour footage). Everything here is original: the character,
+  the course pieces, the themes.
+
+  Open it in a browser to watch a live preview:
+      course.html?theme=sky&seed=7        (themes: sky, candy, lava, ice)
+  render_clips.py drives it headlessly, frame by frame, to make MP4s.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f1e; overflow: hidden; }
+  canvas { display: block; margin: 0 auto; height: 100vh; width: auto; max-width: 100vw; object-fit: contain; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="vendor/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const qs = new URLSearchParams(location.search);
+const PI = Math.PI;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+const easeOutBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const bump = (u, a, b) => Math.min(smooth(u / a), smooth((1 - u) / (1 - b)));
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const angDiff = (a, b) => { let d = (b - a) % (2 * PI); if (d > PI) d -= 2 * PI; if (d < -PI) d += 2 * PI; return d; };
+
+/* ------------------------------------------------------------------ themes */
+const THEMES = {
+  sky: {
+    sky: ['#3a80ee', '#8ac6ff', '#dcf0ff'], sun: { x: 0.78, y: 0.12, r: 12, color: '#fffbea', glow: '255,248,214' },
+    fog: '#d6edff', fogNear: 46, fogFar: 140,
+    hemi: ['#e3f2ff', '#86a865', 0.74], amb: 0.12, dir: ['#fff2d8', 0.86],
+    below: { color: '#3f9be0', y: -26, rough: 0.4, emissive: '#000000', ei: 0 },
+    top: ['#68c94c', '#63c247', '#72cf55'], body: ['#b7743f', '#ae6c38'], under: ['#9c5f33', '#875230'],
+    mover: '#4d84ff', moverTrim: '#ffcc33', spinner: '#ff3b4f', spinnerBase: '#3b4263', hurdle: '#ff8a3c', pad: '#ff4fa3',
+    coin: '#ffcc33', flag0: '#ffcc33', flag1: '#3ddc84', spawn: ['#e8f4ff', '#7cc4ff'],
+    prop: 'tree', deco: 'flowers', cracks: false,
+    cloud: { color: '#ffffff', emissive: '#dfeeff', ei: 0.45 }, lowClouds: true, ambient: null
+  },
+  candy: {
+    sky: ['#ff8fb8', '#ffc3a0', '#fff1d6'], sun: { x: 0.24, y: 0.2, r: 14, color: '#fff6e0', glow: '255,240,214' },
+    fog: '#ffc2d8', fogNear: 46, fogFar: 135,
+    hemi: ['#fff0f5', '#c78bd6', 0.82], amb: 0.14, dir: ['#ffe7d1', 0.78],
+    below: { color: '#d77fd0', y: -20, rough: 1, emissive: '#b85fb4', ei: 0.25 },
+    top: ['#fff4fa', '#ffe3f1', '#fff6e3'], body: ['#ff8cc6', '#6fe6b8', '#b291ff', '#ffd75e', '#86ccff'], under: null,
+    mover: '#7a5cff', moverTrim: '#ffffff', spinner: '#ff4f8b', spinnerBase: '#7a5cff', hurdle: '#ff6fae', pad: '#3fd1c4',
+    coin: '#ffd23f', flag0: '#ffffff', flag1: '#3fd1c4', spawn: ['#ffffff', '#ff9ecf'],
+    prop: 'lollipop', deco: 'sprinkles', cracks: false,
+    cloud: { color: '#ffffff', emissive: '#ffd6e8', ei: 0.5 }, lowClouds: true, ambient: null
+  },
+  lava: {
+    sky: ['#1a0f2e', '#5a1f3a', '#c2442a'], sun: { x: 0.7, y: 0.16, r: 18, color: '#ffb08a', glow: '255,120,80' },
+    fog: '#5a2236', fogNear: 36, fogFar: 118,
+    hemi: ['#9a8ad0', '#ff6a2a', 0.66], amb: 0.16, dir: ['#ffd2b0', 0.7],
+    below: { color: '#ff5a1f', y: -16, rough: 1, emissive: '#ff4a12', ei: 1.0 },
+    top: ['#5a5262', '#4f4858', '#575060'], body: ['#2e2a35', '#35303d'], under: ['#26222c', '#221e28'],
+    mover: '#5b5f73', moverTrim: '#ff8a2a', spinner: '#ff3b2f', spinnerBase: '#2e2a35', hurdle: '#ffb02e', pad: '#ff4fd8',
+    coin: '#ffd23f', flag0: '#ff8a2a', flag1: '#3ddc84', spawn: ['#3a3444', '#ff8a2a'],
+    prop: 'crystal', deco: 'pebbles', cracks: true,
+    cloud: { color: '#5e3a52', emissive: '#3a1426', ei: 0.4 }, lowClouds: false, ambient: 'embers'
+  },
+  ice: {
+    sky: ['#4f86d6', '#a9d4f5', '#eef8ff'], sun: { x: 0.3, y: 0.13, r: 12, color: '#ffffff', glow: '255,255,255' },
+    fog: '#cfe6fb', fogNear: 46, fogFar: 135,
+    hemi: ['#eef6ff', '#9fb3c8', 0.8], amb: 0.14, dir: ['#ffffff', 0.78],
+    below: { color: '#3d8fd6', y: -22, rough: 0.25, emissive: '#000000', ei: 0 },
+    top: ['#ffffff', '#f4fbff'], body: ['#6cc2f2', '#86cdf5', '#5ab4ea'], under: ['#4a98cf', '#428cc4'],
+    mover: '#3a6bd9', moverTrim: '#ffffff', spinner: '#ff4f6d', spinnerBase: '#3a6bd9', hurdle: '#ff8a3c', pad: '#ffcc33',
+    coin: '#ffcc33', flag0: '#ff4f6d', flag1: '#3ddc84', spawn: ['#ffffff', '#3a6bd9'],
+    prop: 'pine', deco: 'snow', cracks: false,
+    cloud: { color: '#ffffff', emissive: '#e6f2ff', ei: 0.5 }, lowClouds: true, ambient: 'snow'
+  }
+};
+
+/* ------------------------------------------------------------------ setup */
+const canvas = document.getElementById('c');
+let renderer, scene, camera, sun, TH, course, pip, parts, amb, below;
+const chunks = new Map(); const CHUNK = 24;
+const geoCache = new Map(), matCache = new Map();
+let LAMBERT = true;
+
+function rbox(w, h, d, r) {
+  r = Math.max(0.004, Math.min(r, w / 2 - 0.002, h / 2 - 0.002, d / 2 - 0.002));
+  const key = [w, h, d, r].map(v => v.toFixed(3)).join(',');
+  if (geoCache.has(key)) return geoCache.get(key);
+  const s = new THREE.Shape(), eps = 0.00001, rad = r - eps;
+  s.absarc(eps, eps, eps, -PI / 2, -PI, true);
+  s.absarc(eps, h - rad * 2, eps, PI, PI / 2, true);
+  s.absarc(w - rad * 2, h - rad * 2, eps, PI / 2, 0, true);
+  s.absarc(w - rad * 2, eps, eps, 0, -PI / 2, true);
+  const g = new THREE.ExtrudeGeometry(s, { depth: d - r * 2, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: rad, bevelThickness: r, curveSegments: 2 });
+  g.center(); geoCache.set(key, g); return g;
+}
+function mat(c, emissive, ei) {
+  const k = c + '|' + (emissive || '') + '|' + (ei || 0);
+  if (!matCache.has(k)) {
+    const m = LAMBERT ? new THREE.MeshLambertMaterial({ color: c }) : new THREE.MeshStandardMaterial({ color: c, roughness: 0.82, metalness: 0 });
+    if (emissive) { m.emissive = new THREE.Color(emissive); m.emissiveIntensity = ei; }
+    matCache.set(k, m);
+  }
+  return matCache.get(k);
+}
+function box(w, h, d, c, r = 0.08, shadow = true, m) {
+  const mesh = new THREE.Mesh(rbox(w, h, d, r), m || mat(c));
+  mesh.castShadow = shadow; mesh.receiveShadow = true; return mesh;
+}
+function put(parent, obj, x, y, z) { obj.position.set(x, y, z); parent.add(obj); return obj; }
+function chunkAt(s) {
+  const k = Math.floor(s / CHUNK);
+  if (!chunks.has(k)) { const g = new THREE.Group(); g.userData.k = k; scene.add(g); chunks.set(k, g); }
+  return chunks.get(k);
+}
+function shade(hex, f) { const c = new THREE.Color(hex); c.multiplyScalar(f); return '#' + c.getHexString(); }
+
+/* ------------------------------------------------------------------ world pieces (s = distance forward, world z = -s) */
+let rnd = Math.random;
+const pick = a => a[Math.floor(rnd() * a.length)];
+const rr = (a, b) => a + rnd() * (b - a);
+
+function bodyColors() {
+  const body = pick(TH.body);
+  const under = TH.under ? pick(TH.under) : shade(body, 0.82);
+  // candy: frosting tinted to match the cake underneath, so the tops aren't plain white
+  const top = TH.prop === 'lollipop' ? '#' + new THREE.Color(body).lerp(new THREE.Color('#ffffff'), 0.55).getHexString() : pick(TH.top);
+  return { top, body, under, under2: shade(under, 0.88) };
+}
+function crackMat() { return mat('#ff7a1a', '#ff5a00', 1.3); }
+function addCracks(g, x, y, z, w, d) {
+  const n = 1 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) {
+    const cw = rr(0.3, Math.min(1.4, w * 0.5));
+    put(g, box(cw, 0.07, 0.05, null, 0.02, false, crackMat()), x + rr(-w / 2 + cw / 2 + 0.1, w / 2 - cw / 2 - 0.1), y + rr(-0.5, 0.35), z + d / 2 + 0.005);
+  }
+  if (rnd() < 0.6) put(g, box(0.05, 0.07, rr(0.3, 0.9), null, 0.02, false, crackMat()), x + w / 2 + 0.005, y + rr(-0.4, 0.3), z + rr(-d / 3, d / 3));
+}
+function island(cx, s0, s1, top, width, opts = {}) {
+  const g = chunkAt((s0 + s1) / 2), L = s1 - s0, cz = -(s0 + s1) / 2, col = bodyColors(), u = opts.u || 0;
+  put(g, box(width, 0.44, L, col.top, 0.14), cx, top - 0.22, cz);
+  put(g, box(width - 0.3, 1.3, L - 0.3, col.body, 0.12), cx, top - 1.05, cz);
+  if (TH.deco === 'sprinkles' || TH.prop === 'lollipop') {
+    // frosting drips over the front edge
+    for (let i = 0; i < Math.floor(width / 0.9); i++) if (rnd() < 0.65) put(g, box(0.34, rr(0.25, 0.6), 0.12, col.top, 0.06, false), cx - width / 2 + 0.45 + i * 0.9, top - 0.45, cz + L / 2 - 0.02);
+  }
+  if (TH.cracks) addCracks(g, cx, top - 1.05, cz, width - 0.3, L - 0.3);
+  put(g, box(width * 0.62, 0.9, L * 0.58, col.under, 0.12), cx + u, top - 2.12, cz);
+  if (L > 5) put(g, box(width * 0.3, 0.7, L * 0.3, col.under2, 0.1), cx + u * 1.4, top - 2.85, cz);
+  return g;
+}
+function pillar(cx, cs, top, size = 1.7) {
+  const g = chunkAt(cs), cz = -cs, col = bodyColors(), hgt = rr(2.2, 3.4);
+  put(g, box(size, 0.4, size, col.top, 0.1), cx, top - 0.2, cz);
+  put(g, box(size - 0.24, hgt, size - 0.24, col.body, 0.08), cx, top - 0.4 - hgt / 2, cz);
+  if (TH.cracks) addCracks(g, cx, top - 0.9, cz, size - 0.24, size - 0.24);
+  put(g, box(size * 0.55, 0.7, size * 0.55, col.under, 0.08), cx, top - 0.75 - hgt, cz);
+  return g;
+}
+function tree(g, x, y, z, s = 1) {
+  const p = TH.prop;
+  if (p === 'tree') {
+    put(g, box(0.42 * s, 1.3 * s, 0.42 * s, '#8b5a2b', 0.06), x, y + 0.65 * s, z);
+    put(g, box(1.9 * s, 1.15 * s, 1.9 * s, '#3faa48', 0.18), x, y + 1.6 * s, z);
+    put(g, box(1.25 * s, 0.8 * s, 1.25 * s, '#52c25a', 0.16), x, y + 2.45 * s, z);
+  } else if (p === 'lollipop') {
+    if (rnd() < 0.55) {
+      put(g, box(0.14 * s, 1.9 * s, 0.14 * s, '#ffffff', 0.05), x, y + 0.95 * s, z);
+      const c = pick(['#ff5fa2', '#7a5cff', '#3fd1c4', '#ffb23f']);
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.78 * s, 0.78 * s, 0.24 * s, 20), mat(c)); disc.rotation.x = PI / 2; disc.castShadow = true;
+      put(g, disc, x, y + 2.25 * s, z);
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.44 * s, 0.44 * s, 0.26 * s, 18), mat('#ffffff')); ring.rotation.x = PI / 2;
+      put(g, ring, x, y + 2.25 * s, z);
+    } else {
+      const c = pick(['#ff7ab8', '#8ef0c8', '#c3a6ff', '#ffe27a']);
+      put(g, box(1.1 * s, 0.9 * s, 1.1 * s, c, 0.4 * s), x, y + 0.45 * s, z);
+      put(g, box(0.8 * s, 0.4 * s, 0.8 * s, shade(c, 1.08), 0.18 * s), x, y + 1.0 * s, z);
+    }
+  } else if (p === 'crystal') {
+    const h = rr(1.6, 2.8) * s;
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.5 * s, h, 4), mat('#2a2433')); spike.castShadow = true; spike.rotation.y = PI / 4;
+    put(g, spike, x, y + h / 2, z);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.2 * s, 0.5 * s, 4), mat('#ff9a3a', '#ff6a00', 1.4)); tip.rotation.y = PI / 4;
+    put(g, tip, x, y + h + 0.05, z);
+    put(g, box(0.5 * s, 0.3 * s, 0.5 * s, '#ffb02e', 0.08, false, mat('#ffb02e', '#ff7a00', 1.1)), x + 0.6 * s, y + 0.15 * s, z + 0.3 * s);
+  } else if (p === 'pine') {
+    put(g, box(0.36 * s, 0.9 * s, 0.36 * s, '#7a5232', 0.05), x, y + 0.45 * s, z);
+    [[1.0, 0.9, 1.25], [0.78, 0.85, 1.95], [0.52, 0.75, 2.55]].forEach(([r, h, yy]) => {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(r * s, h * s, 6), mat('#2f7d4f')); c.castShadow = true; put(g, c, x, y + yy * s, z);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 0.62 * s, h * 0.42 * s, 6), mat('#ffffff')); put(g, cap, x, y + (yy + h * 0.3) * s, z);
+    });
+  }
+}
+function deco(g, x0, x1, s0, s1, top, n) {
+  for (let i = 0; i < n; i++) {
+    const side = i % 2 ? 1 : -1;
+    const x = (x0 + x1) / 2 + side * rr(1.1, (x1 - x0) / 2 - 0.2);
+    const s = rr(s0 + 0.4, s1 - 0.4);
+    if (TH.deco === 'flowers') put(g, box(0.17, 0.17, 0.17, pick(['#ff7aa8', '#ffe066', '#ffffff', '#b48cff']), 0.04, false), x, top + 0.085, -s);
+    else if (TH.deco === 'sprinkles') put(g, box(0.28, 0.08, 0.08, pick(['#ff5fa2', '#3fd1c4', '#7a5cff', '#ffb23f', '#ffffff']), 0.03, false), x, top + 0.04, -s).rotation.y = rnd() * PI;
+    else if (TH.deco === 'pebbles') { const m = rnd() < 0.3 ? mat('#ffb02e', '#ff7a00', 1.0) : null; put(g, box(0.22, 0.14, 0.22, '#3a3444', 0.05, false, m), x, top + 0.07, -s); }
+    else if (TH.deco === 'snow') put(g, box(rr(0.4, 0.8), 0.18, rr(0.4, 0.8), '#ffffff', 0.09, false), x, top + 0.09, -s);
+  }
+}
+function cloud(x, y, s, sc) {
+  const g = chunkAt(s);
+  const m = mat(TH.cloud.color, TH.cloud.emissive, TH.cloud.ei);
+  [[0, 0, 0, 3.2, 1.3, 1.8], [1.45, 0.45, 0.1, 2, 1.4, 1.6], [-1.35, 0.25, -0.1, 1.8, 1.1, 1.5], [0.35, 0.95, -0.2, 1.6, 0.9, 1.3]]
+    .forEach(p => { const c = new THREE.Mesh(rbox(p[3] * sc, p[4] * sc, p[5] * sc, 0.45 * sc), m); put(g, c, x + p[0] * sc, y + p[1] * sc, -s + p[2] * sc); });
+}
+function scenery(s0, s1) {
+  for (let s = s0; s < s1; s += CHUNK) {
+    const n = 2 + Math.floor(rnd() * 2);
+    for (let i = 0; i < n; i++) {
+      const side = rnd() < 0.5 ? -1 : 1;
+      const x = side * rr(16, 48), cs = s + rr(0, CHUNK), top = rr(-9, 9), w = rr(5, 11), L = rr(5, 11);
+      const g = island(x, cs - L / 2, cs + L / 2, top, w, { u: rr(-1, 1) });
+      tree(g, x + rr(-w / 4, w / 4), top, -cs + rr(-L / 4, L / 4), rr(0.9, 1.4));
+    }
+    if (rnd() < 0.9) cloud(rr(-55, 55), rr(10, 22), s + rr(0, CHUNK) + 30, rr(1.2, 2.4));
+    if (TH.lowClouds && rnd() < 0.8) cloud(rr(-30, 30), TH.below.y + rr(5, 9), s + rr(0, CHUNK), rr(1.6, 2.8));
+  }
+}
+
+/* ------------------------------------------------------------------ Pip, the Cobble Tales mascot */
+function faceTex(kind) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const ell = (x, y, rx, ry) => { g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, PI * 2); g.fill(); };
+  const pill = (x, y, w, h) => { const r = w / 2; g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); };
+  g.fillStyle = 'rgba(255,110,110,0.38)'; ell(58, 170, 26, 15); ell(198, 170, 26, 15);
+  g.fillStyle = '#1d1b2e'; g.strokeStyle = '#1d1b2e'; g.lineCap = 'round';
+  if (kind === 'open' || kind === 'oh') {
+    const dy = kind === 'oh' ? -4 : 0;
+    pill(70, 80 + dy, 34, 58); pill(152, 80 + dy, 34, 58);
+    g.fillStyle = '#fff'; ell(80, 96 + dy, 7, 8); ell(162, 96 + dy, 7, 8); g.fillStyle = '#1d1b2e';
+  } else if (kind === 'blink') {
+    g.lineWidth = 11; g.beginPath(); g.moveTo(68, 114); g.lineTo(106, 114); g.moveTo(150, 114); g.lineTo(188, 114); g.stroke();
+  } else {
+    g.lineWidth = 12; g.beginPath(); g.arc(87, 122, 20, PI * 1.1, PI * 1.9); g.stroke(); g.beginPath(); g.arc(169, 122, 20, PI * 1.1, PI * 1.9); g.stroke();
+  }
+  g.lineWidth = 10; const by = kind === 'oh' ? -12 : 0;
+  g.beginPath(); g.moveTo(66, 60 + by); g.lineTo(104, 53 + by); g.moveTo(152, 53 + by); g.lineTo(190, 60 + by); g.stroke();
+  g.fillStyle = '#5b1f2a';
+  if (kind === 'oh') ell(128, 186, 17, 22);
+  else { g.beginPath(); g.moveTo(94, 160); g.quadraticCurveTo(128, 216, 162, 160); g.closePath(); g.fill(); g.fillStyle = '#ff8f8f'; ell(128, 182, 13, 6); }
+  return new THREE.CanvasTexture(c);
+}
+function buildPip() {
+  const C = { skin: '#f3c28f', hoodie: '#ff6f3c', trim: '#e2552a', pants: '#2d4a86', shoe: '#1c2238', cap: '#ffcc33', brim: '#e8a817' };
+  const root = new THREE.Group(), rig = new THREE.Group(); root.add(rig);
+  const leg = side => { const p = new THREE.Group(); p.position.set(0.23 * side, 0.82, 0);
+    put(p, box(0.42, 0.6, 0.42, C.pants, 0.07), 0, -0.3, 0); put(p, box(0.44, 0.24, 0.54, C.shoe, 0.08), 0, -0.7, 0.05);
+    put(p, box(0.46, 0.06, 0.56, '#f4f4f4', 0.02), 0, -0.79, 0.05); rig.add(p); return p; };
+  const legL = leg(1), legR = leg(-1);
+  const upper = new THREE.Group(); upper.position.y = 0.82; rig.add(upper);
+  put(upper, box(0.94, 0.86, 0.5, C.hoodie, 0.1), 0, 0.43, 0);
+  put(upper, box(0.6, 0.22, 0.06, C.trim, 0.03), 0, 0.22, 0.26);
+  put(upper, box(0.72, 0.32, 0.18, C.trim, 0.07), 0, 0.72, -0.3);
+  put(upper, box(0.62, 0.5, 0.06, C.trim, 0.04), 0, 0.42, -0.26); // back panel, since we mostly see Pip from behind
+  const arm = side => { const p = new THREE.Group(); p.position.set(0.67 * side, 0.8, 0);
+    put(p, box(0.38, 0.6, 0.38, C.hoodie, 0.08), 0, -0.25, 0); put(p, box(0.4, 0.09, 0.4, C.trim, 0.03), 0, -0.56, 0);
+    put(p, box(0.32, 0.22, 0.32, C.skin, 0.08), 0, -0.7, 0); upper.add(p); return p; };
+  const armL = arm(1), armR = arm(-1);
+  const head = new THREE.Group(); head.position.y = 1.22; upper.add(head);
+  put(head, box(0.68, 0.66, 0.66, C.skin, 0.13), 0, 0, 0);
+  const faces = { open: faceTex('open'), blink: faceTex('blink'), oh: faceTex('oh'), happy: faceTex('happy') };
+  const faceMat = new THREE.MeshLambertMaterial({ map: faces.open, transparent: true });
+  put(head, new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.58), faceMat), 0, -0.02, 0.334);
+  put(head, box(0.72, 0.2, 0.7, C.cap, 0.08), 0, 0.36, 0);
+  put(head, box(0.58, 0.06, 0.34, C.brim, 0.03), 0, 0.28, 0.45);
+  put(head, box(0.1, 0.05, 0.1, C.brim, 0.02), 0, 0.48, 0);
+  put(head, box(0.5, 0.16, 0.06, C.brim, 0.03), 0, 0.3, -0.34); // cap strap at the back
+  root.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  scene.add(root);
+  return { root, rig, upper, head, armL, armR, legL, legR, faceMat, faces };
+}
+
+/* ------------------------------------------------------------------ course + timeline */
+const SPEED = 6.0;
+function buildCourse(seed, target) {
+  rnd = mulberry32(seed);
+  const C = { moves: [], bursts: [], coins: [], spinners: [], pads: [], movers: [], flags: [], T: 0, end: 0 };
+  const P = { x: 0, s: 0, y: 0, yaw: PI };
+  let landNext = false, rec = null, recording = true, lastFailT = 0, lastCPT = -999, nextFailGap = rr(55, 80);
+  const clampX = x => clamp(x, -3, 3);
+  const yawTo = (x1, s1) => (Math.abs(x1 - P.x) + Math.abs(s1 - P.s) < 1e-3) ? P.yaw : Math.atan2(x1 - P.x, -(s1 - P.s));
+  const push = m => { m.t0 = C.T; C.T += m.dur; m.t1 = C.T; if (landNext) { m.land = true; landNext = false; } C.moves.push(m); return m; };
+  const collect = (x0, s0, y0, x1, s1, y1, t0, dur, arc) => {
+    for (const c of C.coins) {
+      if (c.t !== undefined) continue;
+      const ds = s1 - s0; if (Math.abs(ds) < 1e-3) continue;
+      const u = (c.s - s0) / ds; if (u < 0 || u > 1) continue;
+      const x = x0 + (x1 - x0) * u, y = y0 + (y1 - y0) * u + (arc ? 4 * arc * u * (1 - u) : 0);
+      if (Math.abs(x - c.x) < 0.9 && Math.abs(y + 1.0 - c.y) < 1.3) { c.t = t0 + u * dur; C.bursts.push({ t: c.t, x: c.x, y: c.y, s: c.s, kind: 'spark', n: 10, life: 0.5, col: 'gold' }); }
+    }
+  };
+  const run = (x1, s1) => {
+    const d = Math.hypot(x1 - P.x, s1 - P.s); if (d < 0.05) return;
+    const m = push({ type: 'run', x0: P.x, s0: P.s, x1, s1, y: P.y, dur: d / SPEED, yaw: yawTo(x1, s1) });
+    collect(P.x, P.s, P.y, x1, s1, P.y, m.t0, m.dur, 0);
+    P.x = x1; P.s = s1; P.yaw = m.yaw;
+  };
+  const idle = (dur, extra = {}) => { if (dur > 0.01) push(Object.assign({ type: 'idle', x: P.x, s: P.s, y: P.y, dur, yaw: P.yaw }, extra)); };
+  const jump = (x1, s1, y1, o = {}) => {
+    const d = Math.hypot(x1 - P.x, s1 - P.s), dy = y1 - P.y;
+    const h = o.h || (1.0 + d * 0.11 + Math.max(0, dy) * 0.85), dur = o.dur || (0.42 + d * 0.05 + Math.max(0, dy) * 0.04);
+    if (o.spinner) { // wait so the bar is crossways under Pip at the top of the jump
+      const sp = o.spinner, tm = C.T + dur / 2;
+      if (sp.phase === undefined) sp.phase = -sp.w * tm;
+      else { const a = sp.phase + sp.w * tm, sg = Math.sign(sp.w); const wait = (((-a * sg) % PI) + PI) % PI / Math.abs(sp.w); idle(wait > 0.02 ? wait : 0); }
+    }
+    if (o.mover) { const mv = o.mover; if (C.T + dur < mv.free) idle(mv.free - (C.T + dur)); }
+    const m = push({ type: 'jump', x0: P.x, s0: P.s, y0: P.y, x1, s1, y1, h, dur, yaw: yawTo(x1, s1), bounce: !!o.bounce });
+    collect(P.x, P.s, P.y, x1, s1, y1, m.t0, dur, h);
+    if (o.bounce) { o.bounce.hits.push(m.t0); C.bursts.push({ t: m.t0, x: P.x, y: P.y, s: P.s, kind: 'spark', n: 12, life: 0.5, col: 'pad' }); }
+    if (!o.noDust) C.bursts.push({ t: m.t1, x: x1, y: y1, s: s1, kind: 'dust', n: 7, life: 0.42 });
+    P.x = x1; P.s = s1; P.y = y1; P.yaw = m.yaw; if (!o.noLand) landNext = true;
+  };
+  const ride = mv => {
+    const dur = mv.D / 4.2 + 0.45, t0 = C.T;
+    push({ type: 'ride', mover: mv, dur, yaw: PI });
+    mv.rides.push([t0, t0 + dur]); mv.free = t0 + dur + 0.6 + 3.0;
+    P.x = mv.x; P.s = mv.sb; P.yaw = PI;
+  };
+  // record actions after a checkpoint so a slip can replay them
+  const act = fn => { fn(); if (recording && rec) rec.push(fn); };
+
+  // ---- pieces
+  function startIsland() {
+    island(0, -8, 12, 0, 5.2, { u: -0.6 });
+    deco(chunkAt(0), -2.6, 2.6, -6, 12, 0, 12);
+    tree(chunkAt(0), -2.0, 0, -9, 0.9); tree(chunkAt(0), 2.1, 0, -3.5, 0.8);
+    P.x = 0; P.s = -4; P.y = 0;
+    run(0, 11.4);
+  }
+  function islandEl(feature) {
+    const cx = clampX(P.x + rr(-1.2, 1.2)), y = clamp(P.y + pick([0, 0, 0.5, -0.5]), -1, 7);
+    const gap = rr(3.4, 4.2), landS = P.s + gap, s0 = landS - 0.9;
+    let L = rr(10, 14); if (feature === 'checkpoint') L = 11;
+    const s1 = s0 + L, w = 4.6, g = island(cx, s0, s1, y, w, { u: rr(-1, 1) });
+    deco(g, cx - w / 2, cx + w / 2, s0, s1, y, 8);
+    for (let i = 0; i < 2; i++) if (rnd() < 0.45) tree(g, cx + (i ? 1.85 : -1.85), y, -rr(s0 + 1.5, s1 - 1.5), rr(0.45, 0.6));
+    act(() => jump(cx, landS, y));
+    if (feature === 'coins') {
+      const n = 5 + Math.floor(rnd() * 3), cs0 = s0 + 2.6;
+      for (let i = 0; i < n; i++) addCoin(g, cx, cs0 + i * 1.25, y + 1.0);
+      act(() => run(cx, s1 - 0.5));
+    } else if (feature === 'hurdles') {
+      const n = 1 + Math.floor(rnd() * 2), hs = [];
+      for (let i = 0; i < n; i++) hs.push(s0 + 3.6 + i * 4.2);
+      hs.forEach(s => addHurdle(g, cx, s, y));
+      hs.forEach(s => { act(() => run(cx, s - 1.35)); act(() => jump(cx, s + 1.35, y, { h: 1.05, dur: 0.46 })); });
+      act(() => run(cx, s1 - 0.5));
+    } else if (feature === 'spinner') {
+      const sc = s0 + L / 2, sp = addSpinner(g, cx, sc, y);
+      act(() => run(cx, sc - 1.7));
+      act(() => jump(cx, sc + 1.7, y, { h: 1.9, dur: 0.62, spinner: sp }));
+      act(() => run(cx, s1 - 0.5));
+    } else if (feature === 'checkpoint') {
+      const fs = s0 + 3.4; addFlag(g, cx + 1.75, fs, y); addSpawnPad(g, cx, fs, y);
+      act(() => run(cx, fs));
+      // register checkpoint (not recorded; a replay starts from here)
+      const cp = { x: cx, s: fs, y, flag: C.flags[C.flags.length - 1] };
+      if (cp.flag.t === undefined) { cp.flag.t = C.T; C.bursts.push({ t: C.T, x: cx + 1.75, y: y + 2.9, s: fs, kind: 'confetti', n: 80, life: 2.6 }); C.happy = C.happy || []; C.happy.push([C.T, C.T + 1.2]); }
+      rec = []; recording = true; C.cp = cp; lastCPT = C.T;
+      act(() => run(cx, s1 - 0.5));
+    } else {
+      act(() => run(cx, s1 - 0.5));
+    }
+  }
+  function hopsEl(n, mayFail) {
+    const failAt = mayFail ? 1 + Math.floor(rnd() * (n - 1)) : -1;
+    let cur = { x: P.x, s: P.s, y: P.y };
+    for (let i = 0; i < n; i++) {
+      const d = rr(3.0, 3.7), x = clampX(cur.x + rr(-1.3, 1.3));
+      let dy = pick([0, 0, 0.5, -0.5, 0.7]); if (cur.y > 5) dy = -Math.abs(dy); if (cur.y < 0) dy = Math.abs(dy);
+      const y = cur.y + dy, s = cur.s + d;
+      pillar(x, s, y);
+      if (i === failAt) {
+        const from = { ...cur };
+        // slip: come up short, fall, respawn at the checkpoint, replay, then make it
+        const fx = from.x + (x - from.x) * 0.58, fs = from.s + (s - from.s) * 0.58, fy = Math.min(from.y, y) - 0.6;
+        jump(fx, fs, fy, { h: 0.55, dur: 0.38, noDust: true, noLand: true });
+        push({ type: 'fall', x0: fx, s0: fs, y0: fy, ax: from.x, as: from.s, ay: from.y, dur: 1.35, yaw: P.yaw });
+        push({ type: 'gone', x: C.cp.x, s: C.cp.s, y: C.cp.y, ax: from.x, as: from.s, ay: from.y, dur: 0.35, yaw: PI });
+        const sp = push({ type: 'spawn', x: C.cp.x, s: C.cp.s, y: C.cp.y, dur: 0.6, yaw: PI });
+        C.bursts.push({ t: sp.t0, x: C.cp.x, y: C.cp.y, s: C.cp.s, kind: 'spark', n: 16, life: 0.9, col: 'spawn' });
+        idle(0.3);
+        P.x = C.cp.x; P.s = C.cp.s; P.y = C.cp.y; P.yaw = PI;
+        recording = false; const list = rec.slice(); list.forEach(fn => fn()); recording = true;
+        lastFailT = C.T;
+      }
+      const tx = x, ts = s, ty = y;
+      act(() => jump(tx, ts, ty));
+      if (rnd() < 0.3) act(() => idle(rr(0.05, 0.14)));
+      cur = { x, s, y };
+    }
+  }
+  function stairsEl(n) {
+    let cur = { x: P.x, s: P.s, y: P.y };
+    const up = cur.y < 4.5;
+    for (let i = 0; i < n; i++) {
+      const x = clampX(cur.x + rr(-0.6, 0.6)), s = cur.s + (i === 0 ? 3.0 : 2.5), y = cur.y + (up ? 0.6 : -0.6);
+      pillar(x, s, y, 1.6);
+      const tx = x, ts = s, ty = y; act(() => jump(tx, ts, ty, { dur: 0.44 }));
+      cur = { x, s, y };
+    }
+  }
+  function bounceEl() {
+    const px = clampX(P.x + rr(-0.8, 0.8)), ps = P.s + rr(3.4, 3.9), py = P.y;
+    const g = island(px, ps - 1.5, ps + 1.5, py, 3.0);
+    const pad = addPad(g, px, ps, py);
+    act(() => jump(px, ps, py));
+    act(() => idle(0.1, { squash: true }));
+    const dist = rr(7.2, 8.4), dy = P.y > 5 ? rr(-1, 0.5) : rr(1.2, 2.4);
+    const lx = clampX(px + rr(-1, 1)), ls = ps + dist, ly = py + dy;
+    const L = rr(9, 12), s0 = ls - 0.9, s1 = s0 + L, g2 = island(lx, s0, s1, ly, 4.6, { u: rr(-1, 1) });
+    deco(g2, lx - 2.3, lx + 2.3, s0, s1, ly, 7);
+    if (rnd() < 0.5) tree(g2, lx - 1.85, ly, -rr(s0 + 2, s1 - 2), 0.55);
+    act(() => jump(lx, ls, ly, { h: 3.8, dur: 1.05, bounce: pad }));
+    if (rnd() < 0.7) { for (let i = 0; i < 5; i++) addCoin(g2, lx, s0 + 2.4 + i * 1.25, ly + 1.0); }
+    act(() => run(lx, s1 - 0.5));
+  }
+  function moverEl() {
+    const x = clampX(P.x + rr(-0.6, 0.6)), sa = P.s + rr(3.7, 4.2), y = P.y, D = rr(9, 12);
+    const mv = addMover(x, sa, sa + D, y);
+    act(() => jump(x, sa, y, { mover: mv }));
+    act(() => ride(mv));
+    // landing island
+    const lx = clampX(x + rr(-1, 1)), ls = mv.sb + rr(3.6, 4.1), ly = y + pick([0, 0.5, -0.5]);
+    const L = rr(8, 11), s0 = ls - 0.9, s1 = s0 + L, g = island(lx, s0, s1, ly, 4.6);
+    deco(g, lx - 2.3, lx + 2.3, s0, s1, ly, 6);
+    act(() => jump(lx, ls, ly));
+    act(() => run(lx, s1 - 0.5));
+  }
+
+  // ---- props with state
+  function addCoin(g, x, s, y) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.1, 18), mat(TH.coin, TH.coin, 0.25));
+    m.rotation.z = PI / 2; const holder = new THREE.Group(); holder.add(m); put(g, holder, x, y, -s);
+    m.castShadow = true;
+    holder.userData.dyn = true; C.coins.push({ x, s, y, obj: holder });
+  }
+  function addHurdle(g, x, s, y) {
+    for (const sx of [-1.6, 1.6]) put(g, box(0.2, 0.7, 0.2, '#ffffff', 0.05), x + sx, y + 0.35, -s);
+    put(g, box(3.4, 0.2, 0.22, TH.hurdle, 0.06), x, y + 0.6, -s);
+    for (const bx of [-1, 0, 1]) put(g, box(0.36, 0.21, 0.23, '#ffffff', 0.03), x + bx, y + 0.6, -s);
+  }
+  function addSpinner(g, x, s, y) {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 0.16, 24), mat(TH.spinnerBase)); base.receiveShadow = true; put(g, base, x, y + 0.08, -s);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.62, 16), mat('#5a6286')); hub.castShadow = true; put(g, hub, x, y + 0.47, -s);
+    const bar = new THREE.Group(); bar.userData.dyn = true; put(g, bar, x, y + 0.62, -s);
+    put(bar, box(4.4, 0.34, 0.34, TH.spinner, 0.1), 0, 0, 0);
+    for (const bx of [-1.6, -0.8, 0.8, 1.6]) put(bar, box(0.2, 0.37, 0.37, '#ffffff', 0.05), bx, 0, 0);
+    put(bar, box(0.5, 0.5, 0.5, '#5a6286', 0.12), 0, 0.02, 0);
+    const sp = { bar, w: rr(2.2, 2.8) * (rnd() < 0.5 ? 1 : -1) }; C.spinners.push(sp); return sp;
+  }
+  function addFlag(g, x, s, y) {
+    put(g, box(0.7, 0.2, 0.7, '#cfd6e6', 0.06), x, y + 0.1, -s);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 10), mat('#f4f6fb')); pole.castShadow = true; put(g, pole, x, y + 1.4, -s);
+    const shp = new THREE.Shape(); shp.moveTo(0, 0); shp.lineTo(-1.15, 0.36); shp.lineTo(0, 0.72); shp.lineTo(0, 0);
+    const fm = new THREE.MeshLambertMaterial({ color: TH.flag0, side: THREE.DoubleSide });
+    const flag = new THREE.Mesh(new THREE.ShapeGeometry(shp), fm); flag.rotation.y = PI / 2; flag.castShadow = true; flag.userData.dyn = true;
+    put(g, flag, x, y + 1.95, -s + 0.04);
+    C.flags.push({ mesh: flag, mat: fm });
+  }
+  function addSpawnPad(g, x, s, y) {
+    put(g, box(1.9, 0.06, 1.9, TH.spawn[0], 0.02, false), x, y + 0.03, -s);
+    put(g, box(1.2, 0.07, 1.2, TH.spawn[1], 0.02, false), x, y + 0.035, -s);
+  }
+  function addPad(g, x, s, y) {
+    put(g, box(1.8, 0.16, 1.8, '#3b3f55', 0.05), x, y + 0.08, -s);
+    const top = put(g, box(1.5, 0.2, 1.5, TH.pad, 0.08), x, y + 0.24, -s); top.userData.dyn = true;
+    const pad = { top, hits: [], y }; C.pads.push(pad); return pad;
+  }
+  function addMover(x, sa, sb, y) {
+    const grp = new THREE.Group();
+    put(grp, box(3.4, 0.5, 3.4, TH.mover, 0.12), 0, -0.25, 0);
+    put(grp, box(3.55, 0.14, 3.55, TH.moverTrim, 0.05, true, TH.cracks ? mat(TH.moverTrim, TH.moverTrim, 0.8) : null), 0, -0.56, 0);
+    put(grp, box(1.2, 0.5, 1.2, shade(TH.mover, 0.78), 0.1), 0, -0.88, 0);
+    scene.add(grp);
+    const mv = { grp, x, sa, sb, D: sb - sa, y, rides: [], free: 0 }; C.movers.push(mv); return mv;
+  }
+
+  // ---- generate
+  startIsland();
+  islandEl('checkpoint');
+  let prev = '';
+  while (C.T < target + 4) {
+    if (C.T - lastCPT > rr(24, 30)) { islandEl('checkpoint'); prev = 'cp'; continue; }
+    const r = rnd(); let el;
+    if (r < 0.26) el = 'hops'; else if (r < 0.4) el = 'coins'; else if (r < 0.52) el = 'hurdles'; else if (r < 0.64) el = 'spinner';
+    else if (r < 0.74) el = 'stairs'; else if (r < 0.86) el = 'bounce'; else el = 'mover';
+    if (el === prev) continue; prev = el;
+    if (el === 'hops') { const n = 3 + Math.floor(rnd() * 3); const fail = C.cp && C.T - lastFailT > nextFailGap && C.T - lastCPT > 4 && C.T > 18; hopsEl(n, fail); if (fail) nextFailGap = rr(60, 90); }
+    else if (el === 'stairs') stairsEl(3 + Math.floor(rnd() * 2));
+    else if (el === 'bounce') bounceEl();
+    else if (el === 'mover') moverEl();
+    else islandEl(el);
+  }
+  C.end = C.T;
+  // scenery along the whole route
+  const maxS = Math.max(...C.moves.map(m => Math.max(m.s0 || m.s || 0, m.s1 || 0, m.mover ? m.mover.sb : 0)));
+  scenery(-CHUNK, maxS + 160);
+  for (let s = -10; s < maxS + 40; s += CHUNK * 4) { // a few big background pillars far to the sides for parallax
+    for (const side of [-1, 1]) if (rnd() < 0.7) { const x = side * rr(9, 13), cs = s + rr(0, CHUNK * 4); pillar(x, cs, rr(-4, 3), rr(2.2, 3.2)); }
+  }
+  C.happy = C.happy || [];
+  return C;
+}
+
+
+/* merge each chunk's static meshes into one mesh per material, so the frame is a few dozen draw calls instead of ~1000 */
+function mergeChunks() {
+  for (const [, g] of chunks) {
+    g.updateMatrixWorld(true);
+    const buckets = new Map(), victims = [];
+    g.children.forEach(o => {
+      if (o.userData.dyn || !o.isMesh) return;
+      const key = o.material.uuid + '|' + (o.castShadow ? 1 : 0);
+      if (!buckets.has(key)) buckets.set(key, { mat: o.material, cast: o.castShadow, list: [] });
+      buckets.get(key).list.push(o); victims.push(o);
+    });
+    victims.forEach(o => g.remove(o));
+    for (const b of buckets.values()) {
+      let total = 0; const parts = [];
+      for (const o of b.list) {
+        let geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        o.updateMatrix(); geo.applyMatrix4(o.matrix);
+        parts.push(geo); total += geo.attributes.position.count;
+      }
+      const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3); let off = 0;
+      for (const geo of parts) {
+        pos.set(geo.attributes.position.array, off * 3);
+        if (geo.attributes.normal) nor.set(geo.attributes.normal.array, off * 3);
+        off += geo.attributes.position.count; geo.dispose();
+      }
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); mg.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      mg.computeBoundingSphere();
+      const m = new THREE.Mesh(mg, b.mat); m.castShadow = b.cast; m.receiveShadow = true; g.add(m);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ state at time t */
+function moverS(mv, t) {
+  let s = mv.sa;
+  for (const [a, b] of mv.rides) {
+    if (t < a) break;
+    if (t <= b) return mv.sa + mv.D * smooth((t - a - 0.2) / (b - a - 0.4));
+    const back0 = b + 0.6, back1 = back0 + 3.0;
+    if (t < back0) s = mv.sb; else if (t < back1) s = mv.sb - mv.D * smooth((t - back0) / 3.0); else s = mv.sa;
+  }
+  return s;
+}
+function segAt(t) {
+  const M = course.moves; let lo = 0, hi = M.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (t < M[mid].t1) hi = mid; else lo = mid + 1; }
+  return M[lo];
+}
+function stateAt(t) {
+  const s = segAt(t), lt = Math.max(0, t - s.t0), u = clamp(lt / s.dur, 0, 1);
+  const st = { x: 0, s: 0, y: 0, yaw: s.yaw, pose: 'idle', phase: 0, vis: true, scale: 1, ax: 0, as: 0, ay: 0, u, lt, squash: 0, face: 'open', fixed: false, ayset: false, seg: s, spin: 0 };
+  switch (s.type) {
+    case 'run': st.x = s.x0 + (s.x1 - s.x0) * u; st.s = s.s0 + (s.s1 - s.s0) * u; st.y = s.y; st.pose = 'run'; st.phase = t * 11.5; break;
+    case 'jump':
+      st.x = s.x0 + (s.x1 - s.x0) * u; st.s = s.s0 + (s.s1 - s.s0) * u; st.y = s.y0 + (s.y1 - s.y0) * u + 4 * s.h * u * (1 - u);
+      st.pose = 'jump'; st.ay = s.y0 + (s.y1 - s.y0) * smooth(u); st.ayset = true;
+      if (s.bounce) { st.spin = smooth(u) * PI * 2; st.face = 'happy'; }
+      break;
+    case 'ride': st.x = s.mover.x; st.s = moverS(s.mover, t); st.y = s.mover.y; break;
+    case 'fall': st.x = s.x0; st.s = s.s0 + 0.6 * lt; st.y = s.y0 + 1.2 * lt - 9 * lt * lt; st.pose = 'flail'; st.face = 'oh';
+      st.ax = s.ax; st.as = s.as; st.ay = s.ay; st.fixed = true; st.spin = lt * 2.2; break;
+    case 'gone': st.x = s.x; st.s = s.s; st.y = s.y; st.vis = false; st.ax = s.ax; st.as = s.as; st.ay = s.ay; st.fixed = true; break;
+    case 'spawn': st.x = s.x; st.s = s.s; st.y = s.y; st.scale = Math.max(0.001, easeOutBack(u)); break;
+    default: st.x = s.x; st.s = s.s; st.y = s.y; if (s.squash) st.squash = Math.sin(u * PI) * 1.2;
+  }
+  if (!st.fixed) { st.ax = st.x; st.as = st.s; if (!st.ayset) st.ay = st.y; }
+  if (s.land) st.squash = Math.max(st.squash, 1 - lt / 0.16);
+  if (course.moves.indexOf && s.type === 'jump' && s.h < 0.6) st.face = 'oh';
+  for (const [a, b] of course.happy) if (t >= a && t < b) st.face = 'happy';
+  return st;
+}
+function applyPose(st, t) {
+  const { rig, upper, head, armL, armR, legL, legR } = pip;
+  armL.rotation.set(0, 0, 0.07); armR.rotation.set(0, 0, -0.07);
+  legL.rotation.set(0, 0, 0); legR.rotation.set(0, 0, 0);
+  upper.rotation.set(0, 0, 0); upper.position.y = 0.82; head.rotation.set(0, 0, 0); rig.position.y = 0; rig.rotation.set(0, 0, 0);
+  const br = Math.sin(t * 2.6);
+  switch (st.pose) {
+    case 'idle': upper.position.y = 0.82 + br * 0.012; armL.rotation.z = 0.07 + br * 0.025; armR.rotation.z = -0.07 - br * 0.025; break;
+    case 'run': { const s = Math.sin(st.phase);
+      armL.rotation.x = s * 0.95; armR.rotation.x = -s * 0.95; legL.rotation.x = -s * 0.9; legR.rotation.x = s * 0.9;
+      rig.position.y = Math.abs(Math.cos(st.phase)) * 0.07; upper.rotation.x = 0.14; break; }
+    case 'jump': { const k = Math.min(1, st.u * 4) * (1 - smooth((st.u - 0.72) / 0.28));
+      armL.rotation.x = -2.6 * k; armR.rotation.x = -2.6 * k; armL.rotation.z = 0.07 + 0.25 * k; armR.rotation.z = -0.07 - 0.25 * k;
+      legL.rotation.x = -0.85 * k; legR.rotation.x = 0.5 * k; upper.rotation.x = 0.06 * k;
+      if (st.spin) { rig.rotation.x = -st.spin; rig.position.y = 1.2 * Math.sin(st.spin / 2) * 0; } break; }
+    case 'flail': { const f = t * 20;
+      armL.rotation.z = 2.4 + Math.sin(f) * 0.6; armR.rotation.z = -2.4 - Math.sin(f + 1.3) * 0.6;
+      legL.rotation.x = Math.sin(f * 0.7) * 1.0; legR.rotation.x = -Math.sin(f * 0.7) * 1.0; rig.rotation.x = st.spin * 0.6; break; }
+  }
+  let face = st.face;
+  if (face === 'open' && (t % 3.3) > 3.17) face = 'blink';
+  if (pip.faceMat.map !== pip.faces[face]) { pip.faceMat.map = pip.faces[face]; pip.faceMat.needsUpdate = true; }
+}
+
+/* ------------------------------------------------------------------ particles */
+const PMAX = 240, AMAX = 140;
+const dummy = new THREE.Object3D(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+let CONF, SPARK, GOLD, PADC, SPAWNC, DUST, lastCount = PMAX;
+function makeParticles() {
+  parts = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), PMAX);
+  parts.instanceMatrix.setUsage(THREE.DynamicDrawUsage); parts.frustumCulled = false;
+  const white = new THREE.Color(0xffffff);
+  for (let i = 0; i < PMAX; i++) { parts.setMatrixAt(i, ZERO); parts.setColorAt(i, white); }
+  scene.add(parts);
+  CONF = ['#ff5d5d', '#ffcc33', '#4cd964', '#5ac8fa', '#a78bfa', '#ff8ad8'].map(c => new THREE.Color(c));
+  SPARK = ['#ffffff', '#ffe066', '#9fd6ff'].map(c => new THREE.Color(c));
+  GOLD = ['#ffe066', '#ffcc33', '#ffffff'].map(c => new THREE.Color(c));
+  PADC = [TH.pad, '#ffffff'].map(c => new THREE.Color(c));
+  SPAWNC = ['#ffffff', TH.spawn[1], '#ffe066'].map(c => new THREE.Color(c));
+  DUST = new THREE.Color(TH.cracks ? '#8a7f8f' : (TH.prop === 'lollipop' ? '#fff0f6' : '#f1ead9'));
+  if (TH.ambient) {
+    const m = TH.ambient === 'embers' ? new THREE.MeshBasicMaterial({ color: 0xffa040 }) : new THREE.MeshBasicMaterial({ color: 0xffffff });
+    amb = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), m, AMAX); amb.frustumCulled = false; amb.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(amb);
+  }
+}
+function drawParticles(t) {
+  let idx = 0;
+  const B = course.bursts;
+  for (let b = 0; b < B.length; b++) {
+    const P = B[b], tau = t - P.t;
+    if (tau < 0 || tau > P.life) continue;
+    for (let i = 0; i < P.n && idx < PMAX; i++) {
+      const r1 = hash(b * 97 + i * 1.7), r2 = hash(b * 31 + i * 5.3 + 1), r3 = hash(b * 13 + i * 9.1 + 2), r4 = hash(b * 7 + i * 3.3 + 3);
+      let col; const z0 = -P.s;
+      if (P.kind === 'confetti') {
+        const vx = (r1 - 0.5) * 6, vz = (r2 - 0.5) * 6, vy = 4 + r3 * 5, k = 1.6, g = 9, e = (1 - Math.exp(-k * tau)) / k;
+        dummy.position.set(P.x + vx * e + Math.sin(tau * 3 + r4 * 6) * 0.25, P.y + (vy + g / k) * e - g * tau / k, z0 + vz * e);
+        dummy.rotation.set(tau * (3 + r1 * 5), tau * (2 + r2 * 4), r3 * 6);
+        const fade = tau > P.life - 0.5 ? (P.life - tau) / 0.5 : 1; dummy.scale.set(0.22 * fade, 0.04 * fade, 0.14 * fade);
+        col = CONF[i % CONF.length];
+      } else if (P.kind === 'spark') {
+        const a = i / P.n * PI * 2 + r1 * 0.3, sp = 2.2 + r2 * 1.2, s = 0.16 * (1 - tau / P.life);
+        dummy.position.set(P.x + Math.cos(a) * sp * tau, P.y + 0.3 + (1.8 + r3 * 2) * tau - 2.5 * tau * tau, z0 + Math.sin(a) * sp * tau);
+        dummy.rotation.set(tau * 6, tau * 6, 0); dummy.scale.set(s, s, s);
+        const pal = P.col === 'gold' ? GOLD : P.col === 'pad' ? PADC : P.col === 'spawn' ? SPAWNC : SPARK; col = pal[i % pal.length];
+      } else {
+        const a = i / P.n * PI * 2 + r1, sp = 1.2 + r2 * 0.8, s = 0.17 * (1 - tau / P.life) * (0.7 + r4 * 0.6);
+        dummy.position.set(P.x + Math.cos(a) * sp * tau, P.y + 0.08 + (0.9 + r3 * 0.6) * tau, z0 + Math.sin(a) * sp * tau * 0.8);
+        dummy.rotation.set(r1 * 3, r2 * 3, 0); dummy.scale.set(s, s, s); col = DUST;
+      }
+      dummy.updateMatrix(); parts.setMatrixAt(idx, dummy.matrix); parts.setColorAt(idx, col); idx++;
+    }
+  }
+  for (let i = idx; i < lastCount; i++) parts.setMatrixAt(i, ZERO);
+  lastCount = idx; parts.instanceMatrix.needsUpdate = true; if (parts.instanceColor) parts.instanceColor.needsUpdate = true;
+  if (amb) {
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    for (let i = 0; i < AMAX; i++) {
+      const r1 = hash(i * 3.1), r2 = hash(i * 7.7 + 1), r3 = hash(i * 1.3 + 2), r4 = hash(i * 5.9 + 3);
+      if (TH.ambient === 'embers') {
+        const per = 6 + r4 * 4, ph = ((t / per + r3) % 1);
+        const zz = cz - 4 - ((r2 * 60 - (-cz) * 1) % 60 + 60) % 60;
+        dummy.position.set(cx + (r1 - 0.5) * 30 + Math.sin(t * 0.8 + i) * 0.6, cy - 12 + ph * 22, zz);
+        const s = 0.09 * (1 - ph) + 0.03; dummy.scale.set(s, s, s); dummy.rotation.set(t + i, t * 0.7, 0);
+      } else {
+        const per = 7 + r4 * 5, ph = ((t / per + r3) % 1);
+        const zz = cz - 2 - (((r2 * 50 + cz) % 50) + 50) % 50;
+        dummy.position.set(cx + (r1 - 0.5) * 28 + Math.sin(t * 1.1 + i) * 0.8, cy + 8 - ph * 20, zz);
+        const s = 0.07 + r4 * 0.05; dummy.scale.set(s, s, s); dummy.rotation.set(t + i, t, 0);
+      }
+      dummy.updateMatrix(); amb.setMatrixAt(i, dummy.matrix);
+    }
+    amb.instanceMatrix.needsUpdate = true;
+  }
+}
+
+/* ------------------------------------------------------------------ init + frame */
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+let camX = 0, camY = 0, camS = 0, camYaw = PI, snapNext = true, lastSegType = '';
+// Framed for the Reddit-story layout: post card covers the top ~26% and captions start at 66%,
+// so Pip is kept in the band between them (roughly 35%-57% of the frame height).
+const CAM = { back: 9.0, up: 5.2, ahead: 4.0, lookY: -1.0, fov: 60 };
+
+function skyTexture(w, h) {
+  const c = document.createElement('canvas'); c.width = 288; c.height = 512; const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 512);
+  grd.addColorStop(0, TH.sky[0]); grd.addColorStop(0.5, TH.sky[1]); grd.addColorStop(1, TH.sky[2]);
+  g.fillStyle = grd; g.fillRect(0, 0, 288, 512);
+  const sx = TH.sun.x * 288, sy = TH.sun.y * 512;
+  const glow = g.createRadialGradient(sx, sy, 4, sx, sy, 120);
+  glow.addColorStop(0, `rgba(${TH.sun.glow},0.9)`); glow.addColorStop(0.25, `rgba(${TH.sun.glow},0.4)`); glow.addColorStop(1, `rgba(${TH.sun.glow},0)`);
+  g.fillStyle = glow; g.fillRect(0, 0, 288, 512);
+  g.fillStyle = TH.sun.color; g.beginPath(); g.arc(sx, sy, TH.sun.r, 0, PI * 2); g.fill();
+  return new THREE.CanvasTexture(c);
+}
+
+function setup(opts) {
+  TH = THEMES[opts.theme] || THEMES.sky;
+  LAMBERT = opts.lambert !== false;
+  const W = opts.width || 1080, H = opts.height || 1920;
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: opts.antialias !== false, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+  renderer.shadowMap.enabled = opts.shadows !== false; renderer.shadowMap.type = THREE.PCFShadowMap;
+  scene = new THREE.Scene();
+  scene.background = skyTexture(W, H);
+  scene.fog = new THREE.Fog(new THREE.Color(TH.fog), TH.fogNear, TH.fogFar);
+  camera = new THREE.PerspectiveCamera(CAM.fov, W / H, 0.1, 400);
+  scene.add(new THREE.HemisphereLight(new THREE.Color(TH.hemi[0]), new THREE.Color(TH.hemi[1]), TH.hemi[2]));
+  scene.add(new THREE.AmbientLight(0xffffff, TH.amb));
+  sun = new THREE.DirectionalLight(new THREE.Color(TH.dir[0]), TH.dir[1]);
+  sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 16, bottom: -10, near: 1, far: 60 });
+  sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
+  scene.add(sun); scene.add(sun.target);
+  below = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), new THREE.MeshLambertMaterial({ color: TH.below.color, emissive: new THREE.Color(TH.below.emissive), emissiveIntensity: TH.below.ei }));
+  below.rotation.x = -PI / 2; below.position.y = TH.below.y; scene.add(below);
+  pip = buildPip();
+  course = buildCourse(opts.seed || 1, opts.duration || 150);
+  makeParticles();
+  if (opts.merge !== false) mergeChunks();
+  snapNext = true;
+  return { duration: course.end, moves: course.moves.length };
+}
+
+function frame(t, dt) {
+  const st = stateAt(t);
+  if (st.seg.type === 'spawn' && lastSegType !== 'spawn') snapNext = true;
+  lastSegType = st.seg.type;
+  // character
+  const r = pip.root; r.visible = st.vis;
+  r.position.set(st.x, st.y, -st.s);
+  camYaw = snapNext ? st.yaw : camYaw + angDiff(camYaw, st.yaw) * (1 - Math.exp(-dt * 14));
+  r.rotation.set(0, camYaw, 0);
+  const sq = st.squash, sc = st.scale;
+  r.scale.set(sc * (1 + 0.08 * sq), sc * (1 - 0.14 * sq), sc * (1 + 0.08 * sq));
+  applyPose(st, t);
+  // world state
+  for (const mv of course.movers) mv.grp.position.set(mv.x, mv.y, -moverS(mv, t));
+  for (const sp of course.spinners) sp.bar.rotation.y = (sp.phase || 0) + sp.w * t;
+  for (const c of course.coins) {
+    const o = c.obj;
+    if (c.t !== undefined && t >= c.t) { const k = (t - c.t) / 0.15; o.visible = k < 1; o.scale.setScalar(1 + k); }
+    else { o.visible = true; o.scale.setScalar(1); }
+    o.rotation.y = t * 3 + c.s; o.position.y = c.y + Math.sin(t * 2.4 + c.s) * 0.08;
+  }
+  for (const f of course.flags) { f.mat.color.set(f.t !== undefined && t >= f.t ? TH.flag1 : TH.flag0); f.mesh.scale.y = 1 + Math.sin(t * 6) * 0.06; }
+  for (const p of course.pads) { let k = 0; for (const h of p.hits) { const d = t - h; if (d > -0.12 && d < 0.25) k = Math.max(k, d < 0 ? 1 + d / 0.12 : 1 - d / 0.25); } p.top.scale.y = 1 - 0.55 * k; p.top.position.y = p.y + 0.24 - 0.05 * k; }
+  // camera: behind and above, following the support height (not the jump arc)
+  const k = snapNext ? 1 : 1 - Math.exp(-dt * 2.6), ks = snapNext ? 1 : 1 - Math.exp(-dt * 14), ky = snapNext ? 1 : 1 - Math.exp(-dt * 3.6);
+  camX += (st.ax * 0.75 - camX) * k; camS += (st.as - camS) * ks; camY += (st.ay - camY) * ky;
+  snapNext = false;
+  camera.position.set(camX, camY + CAM.up, -camS + CAM.back);
+  camera.lookAt(camX * 0.9 + (st.ax - camX) * 0.5, camY + CAM.lookY, -camS - CAM.ahead);
+  sun.position.set(camX - 7, camY + 18, -camS + 9); sun.target.position.set(camX, camY, -camS - 3);
+  below.position.x = camX; below.position.z = -camS - 100;
+  // only draw chunks near the camera
+  const ck = Math.floor(camS / CHUNK);
+  for (const [kk, g] of chunks) g.visible = kk >= ck - 1 && kk <= ck + 5;
+  drawParticles(t);
+  renderer.render(scene, camera);
+}
+
+window.Course = {
+  setup,
+  // render n frames starting at time t0 and return them as JPEG data URLs
+  frames(t0, n, fps, quality = 0.92) {
+    const out = [], dt = 1 / fps;
+    for (let i = 0; i < n; i++) { frame(t0 + i * dt, dt); out.push(canvas.toDataURL('image/jpeg', quality)); }
+    return out;
+  },
+  timing(t0, n, fps) { // render vs readback vs encode timing, for tuning
+    const dt = 1 / fps, gl = renderer.getContext(), W = canvas.width, H = canvas.height, buf = new Uint8Array(W * H * 4);
+    let tr = 0, trb = 0, te = 0;
+    for (let i = 0; i < n; i++) {
+      const a = performance.now(); frame(t0 + i * dt, dt);
+      const b = performance.now(); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      const c = performance.now(); canvas.toDataURL('image/jpeg', 0.9);
+      const d = performance.now(); tr += b - a; trb += c - b; te += d - c;
+    }
+    return { submit: tr / n, readback: trb / n, encode_after: te / n };
+  },
+  render(t, dt) { frame(t, dt || 1 / 30); },
+  stats() { renderer.info.autoReset = true; frame(10, 1 / 30); const i = renderer.info; let n = 0; scene.traverse(o => { if (o.isMesh && o.visible) n++; }); return { calls: i.render.calls, tris: i.render.triangles, meshes: n }; },
+  info() { return { end: course.end, moves: course.moves.length, coins: course.coins.length, fails: course.moves.filter(m => m.type === 'fall').length, cps: course.flags.length }; }
+};
+
+if (qs.get('render') !== '1') {
+  const info = setup({ theme: qs.get('theme') || 'sky', seed: parseInt(qs.get('seed') || '7', 10), width: 540, height: 960, duration: 150 });
+  let t = 0, last = performance.now();
+  const loop = now => { const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; if (t > info.duration - 1) { t = 0; snapNext = true; } frame(t, dt); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
+})();
+</script>
+</body>
+</html>

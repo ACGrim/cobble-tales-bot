@@ -14,10 +14,11 @@ and nothing in `career-edge-bot` touches Instagram/TikTok.
 **Format:** original (not scraped) short stories written in the voice and
 conventions of viral "Reddit story" posts (AITA, TIFU, confession,
 relationship, petty revenge, creepy encounter, etc.), narrated over a
-continuous Minecraft parkour gameplay clip — see `src/generate_reddit_story.py`
+continuous clip of **Pip**, the channel's blocky mascot, running an obstacle
+course (original animation; Minecraft parkour is still available) — see `src/generate_reddit_story.py`
 for why these are AI-original rather than real scraped Reddit posts (short
 version: Reddit's API is now practically closed to small projects), and
-`assets/parkour/README.txt` for how to source the background footage.
+`tools/blocky_background/README.md` for how the background clips are made.
 
 ## How a day's videos get made (fully automatic)
 
@@ -29,8 +30,10 @@ version: Reddit's API is now practically closed to small projects), and
    and hashtags.
 3. **Voice** — narrated with a consistent neural TTS voice (`edge-tts`,
    free), giving the channel a recognizable "host."
-4. **Background** — one continuous Minecraft parkour clip from
-   `assets/parkour/`, cropped to fill the vertical frame (falls back to a
+4. **Background** — one continuous clip, picked by `BACKGROUND_STYLE`:
+   `blocky` (default) uses Pip's obstacle-course clips from `assets/blocky/`,
+   `parkour` uses Minecraft parkour from `assets/parkour/`, `mix` picks from
+   both. Cropped to fill the vertical frame (falls back to the other folder, then to a
    plain gradient if that folder is empty).
 5. **Assembly** — `moviepy` + `Pillow` composite the background, burned-in
    branded captions, and a quiet background music bed into a finished
@@ -56,7 +59,7 @@ src/
   generate_reddit_story.py Claude story generation
   tts.py                   edge-tts narration
   captions.py              timing captions to narration length
-  assemble_video.py        moviepy/Pillow video assembly (parkour background)
+  assemble_video.py        moviepy/Pillow video assembly (blocky or parkour background)
   hosting.py               Cloudflare R2 temporary public hosting
   upload_instagram.py      Instagram Graph API Reels publish
   upload_tiktok.py         TikTok Content Posting API publish
@@ -70,8 +73,13 @@ data/
   used_reddit_story_categories.json  rotation state (auto-updated by CI)
 assets/
   music/     royalty-free background tracks
+  blocky/    Pip obstacle-course background clips (rendered by
+             tools/blocky_background/render_clips.py)
   parkour/   Minecraft parkour gameplay clips (you provide these — empty
              by default; see assets/parkour/README.txt)
+tools/
+  blocky_background/  the animated course (course.html) and the script that
+                      renders it to MP4 clips
 .github/workflows/daily.yml   the cron job that runs everything, daily
 ```
 
@@ -93,6 +101,10 @@ python -m src.main
 Set `REDDIT_STORIES_PER_DAY` (default 3) to change how many stories run
 per day. `TIKTOK_PRIVACY_LEVEL` controls TikTok visibility (stays
 `SELF_ONLY` until TikTok approves the app — see SETUP.md).
+`BACKGROUND_STYLE` picks the background (`blocky`, `parkour` or `mix`; in
+GitHub Actions set it as a repo Variable). `TIKTOK_IS_AIGC` (default `true`)
+ticks TikTok's "AI-generated content" label on each post, since the stories
+are AI-written.
 
 ## Realistic expectations
 
@@ -100,6 +112,8 @@ TikTok will only accept private posts (visible to nobody but you) until
 TikTok manually audits your developer app — that's TikTok's own review
 process, entirely out of this pipeline's control, with no guaranteed
 turnaround. Instagram has no equivalent review step for your own account.
-If `assets/parkour/` is empty, videos still build fine with a plain
-gradient background instead of real gameplay footage — see that folder's
-README for where to safely source clips you can monetize.
+The default blocky background is original animation made for this channel,
+so there's no third-party footage license to worry about. If you switch to
+`parkour`, see `assets/parkour/README.txt` for where to safely source clips
+you can monetize. If neither folder has clips, videos still build with a
+plain gradient background.

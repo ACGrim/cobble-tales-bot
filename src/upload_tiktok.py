@@ -40,6 +40,7 @@ def upload(video_url, title):
                 "disable_duet": False,
                 "disable_comment": False,
                 "disable_stitch": False,
+                "is_aigc": config.TIKTOK_IS_AIGC,
             },
             "source_info": {
                 "source": "PULL_FROM_URL",

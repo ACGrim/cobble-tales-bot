@@ -1,8 +1,10 @@
 """
 Assembles the final vertical (1080x1920) Reddit-story video from:
   - narration audio (mp3, from tts.py)
-  - a continuous Minecraft parkour gameplay clip (from assets/parkour/),
-    cover-cropped to fill the frame
+  - one continuous background clip, cover-cropped to fill the frame: by
+    default Pip, the channel's blocky mascot, running an obstacle course
+    (assets/blocky/), or Minecraft parkour gameplay (assets/parkour/) --
+    see config.BACKGROUND_STYLE
   - a mock Reddit post card (subreddit/title/fake votes) pinned near the
     top, so it reads like a genuine screenshot of the post being narrated
   - burned-in captions (rendered with Pillow, NOT ImageMagick, so this runs
@@ -306,24 +308,59 @@ def _fit_cover(clip, w, h):
     return crop(clip, width=w, height=h, x_center=clip.w / 2, y_center=clip.h / 2)
 
 
+def _clips_in(folder):
+    # skip half-written files from tools/blocky_background/render_clips.py
+    return sorted(p for p in glob.glob(os.path.join(folder, "*.mp4")) if ".part." not in os.path.basename(p))
+
+
+def build_background(total_duration, work_dir, w, h):
+    """Picks the background per config.BACKGROUND_STYLE ("blocky",
+    "parkour" or "mix"). This is what main.py passes to assemble()."""
+    style = config.BACKGROUND_STYLE
+    if style == "parkour":
+        return build_parkour_background(total_duration, work_dir, w, h)
+    if style == "mix":
+        clip_paths = _clips_in(config.BLOCKY_DIR) + _clips_in(config.PARKOUR_DIR)
+        return _clip_background(clip_paths, total_duration, work_dir, w, h, "mix")
+    if style != "blocky":
+        print(f"[assemble] unknown BACKGROUND_STYLE {style!r} -- using blocky.")
+    return build_blocky_background(total_duration, work_dir, w, h)
+
+
+def build_blocky_background(total_duration, work_dir, w, h):
+    """Pip, the channel's blocky mascot, running a procedurally generated
+    obstacle course: original animation rendered by
+    tools/blocky_background/render_clips.py into assets/blocky/. Framed so
+    Pip stays in the band between the Reddit card and the captions. Falls
+    back to parkour clips if assets/blocky/ is empty."""
+    clip_paths = _clips_in(config.BLOCKY_DIR) or _clips_in(config.PARKOUR_DIR)
+    return _clip_background(clip_paths, total_duration, work_dir, w, h, "blocky")
+
+
 def build_parkour_background(total_duration, work_dir, w, h):
     """Reddit-story videos use ONE continuous Minecraft parkour gameplay
     clip cropped to fill the vertical frame, not several cut-together
     topical b-roll clips -- that's the genre convention, and it also means
     opening exactly one VideoFileClip (one ffmpeg reader) instead of many.
-    Picks a random clip from assets/parkour/ and a random start offset so
-    repeat uploads don't all open on the same frame; loops the clip if it's
-    shorter than the video needs."""
-    clip_paths = sorted(glob.glob(os.path.join(config.PARKOUR_DIR, "*.mp4")))
+    Falls back to blocky clips if assets/parkour/ is empty."""
+    clip_paths = _clips_in(config.PARKOUR_DIR) or _clips_in(config.BLOCKY_DIR)
+    return _clip_background(clip_paths, total_duration, work_dir, w, h, "parkour")
+
+
+def _clip_background(clip_paths, total_duration, work_dir, w, h, label):
+    """Picks a random clip and a random start offset so repeat uploads don't
+    all open on the same frame; loops the clip if it's shorter than the
+    video needs; cover-crops it to the vertical frame."""
     if not clip_paths:
-        print(f"[assemble] no parkour clips found in {config.PARKOUR_DIR} -- "
-              f"using a plain gradient background instead. See "
-              f"assets/parkour/README.txt.")
+        print(f"[assemble] no background clips found for {label!r} (looked in "
+              f"{config.BLOCKY_DIR} and {config.PARKOUR_DIR}) -- using a plain "
+              f"gradient background instead.")
         img_path = os.path.join(work_dir, "fallback_bg.png")
         _gradient_fallback_image(img_path, w, h)
         return ImageClip(img_path).set_duration(total_duration), []
 
     path = random.choice(clip_paths)
+    print(f"[assemble] background: {os.path.relpath(path, config.ROOT_DIR)}")
     raw = VideoFileClip(path, audio=False)
 
     if raw.duration <= total_duration:
