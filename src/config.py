@@ -19,13 +19,13 @@ R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "cobble-tales-media")
 R2_PUBLIC_BASE_URL = os.environ.get("R2_PUBLIC_BASE_URL", "")
 
 # Instagram Graph API (Instagram professional account + Meta app)
-IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "")
-IG_USER_ID = os.environ.get("IG_USER_ID", "")
+IG_ACCESS_TOKEN = os.environ.get("IG_ACCESS_TOKEN", "").strip()
+IG_USER_ID = os.environ.get("IG_USER_ID", "").strip()
 
 # TikTok Content Posting API. Until TikTok audits the developer app, every
 # post is forced private regardless of this setting -- flip it to
 # "PUBLIC_TO_EVERYONE" once the app is approved. See SETUP.md.
-TIKTOK_ACCESS_TOKEN = os.environ.get("TIKTOK_ACCESS_TOKEN", "")
+TIKTOK_ACCESS_TOKEN = os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()
 TIKTOK_PRIVACY_LEVEL = os.environ.get("TIKTOK_PRIVACY_LEVEL", "SELF_ONLY")
 
 CROSSPOST_HOSTING_ENABLED = bool(

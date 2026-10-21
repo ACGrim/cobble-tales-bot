@@ -32,7 +32,7 @@ def body_of(resp):
 
 
 def check_github_pat():
-    pat = os.environ.get("GH_SECRETS_PAT", "")
+    pat = os.environ.get("GH_SECRETS_PAT", "").strip()
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not pat:
         report(False, "GH_SECRETS_PAT", "secret is not set")
@@ -51,7 +51,7 @@ def check_github_pat():
 
 
 def check_tiktok():
-    ck, cs, rt = (os.environ.get(k, "") for k in ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TIKTOK_REFRESH_TOKEN"))
+    ck, cs, rt = (os.environ.get(k, "").strip() for k in ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET", "TIKTOK_REFRESH_TOKEN"))
     if not (ck and cs and rt):
         report(False, "TikTok", "TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / TIKTOK_REFRESH_TOKEN not all set")
         return
@@ -67,7 +67,10 @@ def check_tiktok():
 
 
 def check_instagram():
-    tok = os.environ.get("IG_ACCESS_TOKEN", "")
+    raw = os.environ.get("IG_ACCESS_TOKEN", "")
+    tok = raw.strip()
+    if raw != tok:
+        print("NOTE  IG_ACCESS_TOKEN secret has extra spaces/line breaks around it (the scripts now trim them)")
     if not tok:
         report(False, "Instagram", "IG_ACCESS_TOKEN not set")
         return
@@ -80,7 +83,8 @@ def check_instagram():
     rf = requests.get(f"{IG_BASE}/refresh_access_token", params={"grant_type": "ig_refresh_token", "access_token": tok}, timeout=30)
     b = body_of(rf)
     if rf.status_code == 200 and isinstance(b, dict) and "access_token" in b:
-        report(True, "Instagram refresh", f"works; new token valid ~{int(b.get('expires_in', 0)) // 86400} days")
+        same = b["access_token"] == tok
+        report(True, "Instagram refresh", f"works; Instagram returned {'the SAME' if same else 'a NEW'} token, valid ~{int(b.get('expires_in', 0)) // 86400} days")
     else:
         report(False, "Instagram refresh", f"failed ({rf.status_code}): {b}")
 

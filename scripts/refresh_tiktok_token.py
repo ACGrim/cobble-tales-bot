@@ -79,11 +79,11 @@ def update_github_secret(repo, pat, secret_name, secret_value):
 
 
 def main():
-    client_key = os.environ.get("TIKTOK_CLIENT_KEY", "")
-    client_secret = os.environ.get("TIKTOK_CLIENT_SECRET", "")
-    refresh_token = os.environ.get("TIKTOK_REFRESH_TOKEN", "")
+    client_key = os.environ.get("TIKTOK_CLIENT_KEY", "").strip()
+    client_secret = os.environ.get("TIKTOK_CLIENT_SECRET", "").strip()
+    refresh_token = os.environ.get("TIKTOK_REFRESH_TOKEN", "").strip()
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    pat = os.environ.get("GH_SECRETS_PAT", "")
+    pat = os.environ.get("GH_SECRETS_PAT", "").strip()
     github_env_path = os.environ.get("GITHUB_ENV", "")
 
     if not (client_key and client_secret and refresh_token):
