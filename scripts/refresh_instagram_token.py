@@ -34,7 +34,10 @@ def refresh_instagram_token(access_token):
         params={"grant_type": "ig_refresh_token", "access_token": access_token},
         timeout=30,
     )
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        # Meta puts the real reason in the JSON body (message/code/subcode);
+        # the bare "400 Bad Request" hides it. The body never contains the token.
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:500]}")
     body = resp.json()
     if "access_token" not in body:
         raise RuntimeError(f"unexpected response body: {body}")
@@ -52,7 +55,10 @@ def update_github_secret(repo, pat, secret_name, secret_value):
         headers=headers,
         timeout=30,
     )
-    key_resp.raise_for_status()
+    if key_resp.status_code == 401:
+        raise RuntimeError("GitHub rejected GH_SECRETS_PAT (401 Bad credentials): it's expired, revoked or mistyped -- create a new token")
+    if key_resp.status_code >= 400:
+        raise RuntimeError(f"GitHub {key_resp.status_code} reading the secrets key -- GH_SECRETS_PAT needs 'Secrets: Read and write' on this repo: {key_resp.text[:300]}")
     key_data = key_resp.json()
 
     from nacl import encoding, public  # local import: only needed on this path
