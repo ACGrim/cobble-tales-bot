@@ -113,6 +113,13 @@ GitHub Actions set it as a repo Variable). `TIKTOK_IS_AIGC` (default `true`)
 ticks TikTok's "AI-generated content" label on each post, since the stories
 are AI-written.
 
+## Follow call-to-action
+
+Every video ends with the narrator saying `FOLLOW_CTA_LINE` ("Follow Cobble
+Tales for a new story every day.") while a follow card pops up: Pip's
+avatar, the channel name, `FOLLOW_CTA_SUBTITLE` and a Follow button that
+flips to Following. Set `FOLLOW_CTA=false` to turn it off.
+
 ## Checking tokens
 
 If a run logs a token warning, open the Actions tab and run **Check tokens**.
