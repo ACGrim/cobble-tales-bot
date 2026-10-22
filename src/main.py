@@ -114,8 +114,13 @@ def run_reddit_story(index, session_used_categories):
     narration_path = os.path.join(work_dir, "narration.mp3")
     voice = tts.voice_for(story_data.get("narrator", "either"))
     print(f"[main] Reddit story {index} narrator: {story_data.get('narrator', 'either')} -> {voice}")
-    tts.synthesize(story_data["script"], narration_path, voice=voice)
+    outro_start = None
+    if config.FOLLOW_CTA:
+        outro_start = tts.synthesize_with_outro(story_data["script"], narration_path, voice, config.FOLLOW_CTA_LINE)
+    else:
+        tts.synthesize(story_data["script"], narration_path, voice=voice)
     duration = _audio_duration(narration_path)
+    story_seconds = outro_start if outro_start else duration
 
     if (duration < config.REDDIT_STORY_TARGET_SECONDS_MIN - 5
             or duration > config.REDDIT_STORY_TARGET_SECONDS_MAX + 15):
@@ -123,7 +128,8 @@ def run_reddit_story(index, session_used_categories):
               f"target range {config.REDDIT_STORY_TARGET_SECONDS_MIN}-"
               f"{config.REDDIT_STORY_TARGET_SECONDS_MAX}s. Continuing anyway.")
 
-    timed_captions = captions.time_captions(story_data["captions"], duration)
+    # captions cover the story only; the follow card speaks for itself
+    timed_captions = captions.time_captions(story_data["captions"], story_seconds)
 
     out_path = os.path.join(work_dir, "output.mp4")
     assemble_video.assemble(
@@ -132,6 +138,7 @@ def run_reddit_story(index, session_used_categories):
         timed_captions, work_dir, out_path,
         w=config.VIDEO_WIDTH, h=config.VIDEO_HEIGHT,
         story_title=story_data["title"], category=category,
+        outro_start=outro_start,
     )
     print(f"[main] Reddit story {index} assembled: {out_path}")
 

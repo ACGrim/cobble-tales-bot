@@ -374,8 +374,101 @@ def _clip_background(clip_paths, total_duration, work_dir, w, h, label):
     return bg, [raw]
 
 
+# --- Follow card (end of every video) -------------------------------------
+# Pops up while the narrator says the follow line: Pip's avatar, the channel
+# name, "A new story every day" and a Follow button that flips to Following,
+# the "tap" viewers recognise from every platform.
+
+def _render_follow_card_png(out_path, following=False, card_w=860):
+    pad = 30
+    card_h = 600
+    img = Image.new("RGBA", (card_w + pad * 2, card_h + pad * 2), (0, 0, 0, 0))
+
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle([pad, pad + 10, pad + card_w, pad + card_h + 10], radius=48, fill=(0, 0, 0, 110))
+    img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
+    draw = ImageDraw.Draw(img)
+    # fully opaque: moviepy 1.0.3's resize (used for the pop-in) truncates the
+    # mask to 0/1, so a 97%-opaque card would vanish while it animates
+    draw.rounded_rectangle([pad, pad, pad + card_w, pad + card_h], radius=48, fill=(255, 255, 255, 255))
+
+    # avatar: Pip, circle-cropped, with an orange ring
+    cx = pad + card_w // 2
+    d = 210
+    ay = pad + 44
+    draw.ellipse([cx - d // 2 - 9, ay - 9, cx + d // 2 + 9, ay + d + 9], fill=(255, 111, 60, 255))
+    avatar_path = os.path.join(config.BRANDING_DIR, "youtube_profile.jpg")
+    if os.path.exists(avatar_path):
+        av = Image.open(avatar_path).convert("RGBA").resize((d, d), Image.LANCZOS)
+        mask = Image.new("L", (d, d), 0)
+        ImageDraw.Draw(mask).ellipse([0, 0, d - 1, d - 1], fill=255)
+        img.paste(av, (cx - d // 2, ay), mask)
+    else:
+        draw.ellipse([cx - d // 2, ay, cx + d // 2, ay + d], fill=(124, 196, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    def centered(text, font, y, fill):
+        tw = draw.textlength(text, font=font)
+        draw.text((cx - tw / 2, y), text, font=font, fill=fill)
+
+    centered(config.CHANNEL_BRAND, _load_font(70), ay + d + 34, (27, 31, 51, 255))
+    centered(config.FOLLOW_CTA_SUBTITLE, _load_font(42), ay + d + 122, (96, 104, 130, 255))
+
+    bw, bh = 420, 112
+    by = pad + card_h - bh - 44
+    if following:
+        draw.rounded_rectangle([cx - bw // 2, by, cx + bw // 2, by + bh], radius=bh // 2, fill=(226, 230, 240, 255))
+        label, color = "\u2713 Following", (27, 31, 51, 255)
+    else:
+        draw.rounded_rectangle([cx - bw // 2, by + 8, cx + bw // 2, by + bh + 8], radius=bh // 2, fill=(184, 64, 26, 255))
+        draw.rounded_rectangle([cx - bw // 2, by, cx + bw // 2, by + bh], radius=bh // 2, fill=(255, 111, 60, 255))
+        label, color = "+ Follow", (255, 255, 255, 255)
+    font = _load_font(56)
+    tw = draw.textlength(label, font=font)
+    bb = draw.textbbox((0, 0), label, font=font)
+    draw.text((cx - tw / 2, by + (bh - (bb[3] - bb[1])) / 2 - bb[1]), label, font=font, fill=color)
+
+    img.save(out_path)
+    return out_path
+
+
+def _follow_card_layers(start, end, work_dir, w, h):
+    """Dim the background slightly, pop the card in, then 'tap' Follow."""
+    if end - start < 0.6:
+        return []
+    follow_png = _render_follow_card_png(os.path.join(work_dir, "follow_card.png"))
+    following_png = _render_follow_card_png(os.path.join(work_dir, "following_card.png"), following=True)
+    dim_png = os.path.join(work_dir, "dim.png")
+    Image.new("RGBA", (w, h), (8, 10, 24, 105)).save(dim_png)
+
+    card_w, card_h = Image.open(follow_png).size
+    cx, cy = w / 2, h * 0.47
+    pop = 0.35
+    tap_at = min(1.25, (end - start) * 0.55)
+
+    def scale(t):
+        if t >= pop:
+            return 1.0
+        x = t / pop  # ease-out-back from 0.55 to 1.0
+        c1 = 1.70158
+        c3 = c1 + 1
+        return 0.55 + 0.45 * (1 + c3 * (x - 1) ** 3 + c1 * (x - 1) ** 2)
+
+    dim = ImageClip(dim_png).set_start(start).set_duration(end - start).set_position((0, 0))
+    first = (
+        ImageClip(follow_png).set_start(start).set_duration(tap_at)
+        .resize(scale)
+        .set_position(lambda t: (cx - card_w * scale(t) / 2, cy - card_h * scale(t) / 2))
+    )
+    second = (
+        ImageClip(following_png).set_start(start + tap_at).set_duration(end - start - tap_at)
+        .set_position((cx - card_w / 2, cy - card_h / 2))
+    )
+    return [dim, first, second]
+
+
 def assemble(narration_path, background_builder, timed_captions, work_dir, out_path,
-             w=None, h=None, story_title=None, category=None):
+             w=None, h=None, story_title=None, category=None, outro_start=None):
     w = w or config.VIDEO_WIDTH
     h = h or config.VIDEO_HEIGHT
     os.makedirs(work_dir, exist_ok=True)
@@ -418,6 +511,8 @@ def assemble(narration_path, background_builder, timed_captions, work_dir, out_p
     if reddit_layer is not None:
         layers.append(reddit_layer)
     layers += caption_layers
+    if outro_start is not None and outro_start < total_duration:
+        layers += _follow_card_layers(outro_start, total_duration, work_dir, w, h)
 
     video = CompositeVideoClip(layers, size=(w, h)).set_duration(total_duration)
 

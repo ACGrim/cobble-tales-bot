@@ -63,6 +63,12 @@ TTS_VOICE_MALE = os.environ.get("TTS_VOICE_MALE", "en-US-AndrewMultilingualNeura
 TTS_VOICE_FEMALE = os.environ.get("TTS_VOICE_FEMALE", "en-US-AvaMultilingualNeural")
 TTS_RATE = os.environ.get("TTS_RATE", "+4%")
 
+# Follow call-to-action at the end of every video: the narrator says
+# FOLLOW_CTA_LINE after the story while a "Follow" card pops up on screen.
+FOLLOW_CTA = os.environ.get("FOLLOW_CTA", "true").strip().lower() not in ("0", "false", "no")
+FOLLOW_CTA_LINE = os.environ.get("FOLLOW_CTA_LINE", "Follow Cobble Tales for a new story every day.")
+FOLLOW_CTA_SUBTITLE = os.environ.get("FOLLOW_CTA_SUBTITLE", "A new story every day")
+
 # Vertical (9:16), Reels/TikTok native format
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
@@ -95,6 +101,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(ROOT_DIR, "data")
 ASSETS_DIR = os.path.join(ROOT_DIR, "assets")
 MUSIC_DIR = os.path.join(ASSETS_DIR, "music")
+BRANDING_DIR = os.path.join(ASSETS_DIR, "branding")
 PARKOUR_DIR = os.path.join(ASSETS_DIR, "parkour")
 BLOCKY_DIR = os.path.join(ASSETS_DIR, "blocky")  # Pip obstacle-course clips, see tools/blocky_background/
 WORK_DIR = os.path.join(ROOT_DIR, "work")  # scratch dir, gitignored
